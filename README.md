@@ -87,3 +87,7 @@ A missing file uses the defaults. An invalid file is reported and the defaults a
 ## Logging
 
 Set `RUST_LOG` to control log output from the terminal listing, for example `RUST_LOG=debug`. Log output goes to stderr.
+
+## License
+
+NexusFM is free software, licensed under the GNU General Public License, version 3. See [LICENSE](LICENSE).

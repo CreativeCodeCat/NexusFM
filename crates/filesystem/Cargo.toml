@@ -3,6 +3,7 @@ name = "nexusfm-filesystem"
 description = "Filesystem backend for NexusFM (directory listing; GIO/GVFS comes later)"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 
 [dependencies]
 nexusfm-core = { path = "../core" }

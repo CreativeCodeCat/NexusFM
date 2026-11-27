@@ -3,4 +3,5 @@ name = "nexusfm-qt"
 description = "Launches the NexusFM Qt Widgets window (C++ in qt/, built with CMake)"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 build = "build.rs"

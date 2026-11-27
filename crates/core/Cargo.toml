@@ -3,6 +3,7 @@ name = "nexusfm-core"
 description = "UI-independent types and rules for NexusFM"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 
 [dependencies]
 serde.workspace = true

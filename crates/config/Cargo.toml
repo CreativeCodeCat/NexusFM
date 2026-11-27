@@ -3,6 +3,7 @@ name = "nexusfm-config"
 description = "User configuration for NexusFM, stored as TOML in the XDG config directory"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 
 [dependencies]
 nexusfm-core = { path = "../core" }
