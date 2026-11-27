@@ -1,0 +1,177 @@
+// Copyright (C) 2026 NexusFM
+//
+// This file is part of NexusFM, licensed under the GNU General Public License
+// version 3. See the LICENSE file for details.
+
+//! Details shown in a file's Properties dialog.
+
+use std::fs;
+use std::os::unix::fs::MetadataExt;
+use std::path::{Path, PathBuf};
+use std::time::SystemTime;
+
+use nexusfm_core::{EntryKind, NexusError, Result};
+
+/// What a file's Properties dialog shows.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FileProperties {
+    pub path: PathBuf,
+    pub name: String,
+    pub kind: EntryKind,
+    /// Size in bytes. For a symbolic link, the length of the link itself.
+    pub size: u64,
+    pub modified: Option<SystemTime>,
+    pub accessed: Option<SystemTime>,
+    pub created: Option<SystemTime>,
+    /// Permission bits, the low nine bits of the file mode.
+    pub mode: u32,
+    pub owner: String,
+    pub group: String,
+    /// Where a symbolic link points, if this is one.
+    pub link_target: Option<PathBuf>,
+}
+
+impl FileProperties {
+    /// Permissions as `rwxr-x---`.
+    pub fn permission_string(&self) -> String {
+        permission_string(self.mode)
+    }
+}
+
+/// Reads the Properties details for `path`. A symbolic link is described
+/// itself, not the file it points to.
+pub fn read_properties(path: &Path) -> Result<FileProperties> {
+    let meta = fs::symlink_metadata(path).map_err(|err| NexusError::io(path, err))?;
+    let file_type = meta.file_type();
+
+    let kind = if file_type.is_symlink() {
+        EntryKind::Symlink
+    } else if file_type.is_dir() {
+        EntryKind::Directory
+    } else if file_type.is_file() {
+        EntryKind::File
+    } else {
+        EntryKind::Other
+    };
+
+    let link_target = if kind == EntryKind::Symlink {
+        fs::read_link(path).ok()
+    } else {
+        None
+    };
+
+    Ok(FileProperties {
+        path: path.to_path_buf(),
+        name: path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.display().to_string()),
+        kind,
+        size: meta.len(),
+        modified: meta.modified().ok(),
+        accessed: meta.accessed().ok(),
+        created: meta.created().ok(),
+        mode: meta.mode() & 0o777,
+        owner: user_name(meta.uid()),
+        group: group_name(meta.gid()),
+        link_target,
+    })
+}
+
+/// Formats permission bits as `rwxr-x---`.
+pub fn permission_string(mode: u32) -> String {
+    let flags = [
+        (0o400, 'r'),
+        (0o200, 'w'),
+        (0o100, 'x'),
+        (0o040, 'r'),
+        (0o020, 'w'),
+        (0o010, 'x'),
+        (0o004, 'r'),
+        (0o002, 'w'),
+        (0o001, 'x'),
+    ];
+    flags
+        .iter()
+        .map(|(bit, ch)| if mode & bit != 0 { *ch } else { '-' })
+        .collect()
+}
+
+/// The account name for `uid`, or the number if it is not in `/etc/passwd`.
+fn user_name(uid: u32) -> String {
+    lookup_name("/etc/passwd", uid).unwrap_or_else(|| uid.to_string())
+}
+
+/// The group name for `gid`, or the number if it is not in `/etc/group`.
+fn group_name(gid: u32) -> String {
+    lookup_name("/etc/group", gid).unwrap_or_else(|| gid.to_string())
+}
+
+/// Finds the name for `id` in a colon-separated account file such as `/etc/passwd`.
+fn lookup_name(file: &str, id: u32) -> Option<String> {
+    let text = fs::read_to_string(file).ok()?;
+    text.lines().find_map(|line| {
+        let mut fields = line.split(':');
+        let name = fields.next()?;
+        let _password = fields.next()?;
+        let this_id: u32 = fields.next()?.parse().ok()?;
+        (this_id == id).then(|| name.to_string())
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn formats_permission_bits() {
+        assert_eq!(permission_string(0o755), "rwxr-xr-x");
+        assert_eq!(permission_string(0o640), "rw-r-----");
+        assert_eq!(permission_string(0o000), "---------");
+    }
+
+    #[test]
+    fn describes_a_regular_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("note.txt");
+        fs::write(&file, b"hello").unwrap();
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o640)).unwrap();
+
+        let props = read_properties(&file).unwrap();
+        assert_eq!(props.name, "note.txt");
+        assert_eq!(props.kind, EntryKind::File);
+        assert_eq!(props.size, 5);
+        assert_eq!(props.mode, 0o640);
+        assert_eq!(props.permission_string(), "rw-r-----");
+        assert!(props.modified.is_some());
+        assert!(props.link_target.is_none());
+        assert!(!props.owner.is_empty());
+    }
+
+    #[test]
+    fn describes_a_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let props = read_properties(dir.path()).unwrap();
+        assert_eq!(props.kind, EntryKind::Directory);
+    }
+
+    #[test]
+    fn describes_a_symlink_without_following_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target");
+        fs::write(&target, b"x").unwrap();
+        let link = dir.path().join("link");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+
+        let props = read_properties(&link).unwrap();
+        assert_eq!(props.kind, EntryKind::Symlink);
+        assert_eq!(props.link_target, Some(target));
+    }
+
+    #[test]
+    fn missing_path_is_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(read_properties(&dir.path().join("nope")).is_err());
+    }
+}

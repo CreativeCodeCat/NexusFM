@@ -14,7 +14,7 @@ use std::env;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use nexusfm_config::{Config, config_file_path};
+use nexusfm_config::Config;
 use nexusfm_core::{EntryKind, sort_entries};
 use nexusfm_filesystem::list_directory;
 use tracing::{debug, error, warn};
@@ -67,16 +67,10 @@ fn main() -> ExitCode {
 /// Loads the user configuration. Problems fall back to the defaults so a bad
 /// file never stops the application from starting.
 fn load_config() -> Config {
-    let Some(path) = config_file_path(
+    match Config::load_user(
         env::var_os("XDG_CONFIG_HOME").as_deref(),
         env::var_os("HOME").as_deref(),
-    ) else {
-        warn!("no HOME or XDG_CONFIG_HOME set; using default configuration");
-        return Config::default();
-    };
-    debug!(path = %path.display(), "loading configuration");
-
-    match Config::load(&path) {
+    ) {
         Ok(config) => config,
         Err(err) => {
             warn!(%err, "using default configuration");

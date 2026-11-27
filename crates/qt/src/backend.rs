@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::QString;
-use nexusfm_config::{Config, ViewMode, config_file_path};
+use nexusfm_config::{Config, ViewMode};
 use nexusfm_core::SortKey;
 use nexusfm_session::{Listing, Session, listing_json, parse_paths, places_json};
 
@@ -39,6 +39,7 @@ pub mod qobject {
         #[qproperty(bool, can_go_forward, cxx_name = "canGoForward")]
         #[qproperty(bool, can_paste, cxx_name = "canPaste")]
         #[qproperty(i32, view_mode, cxx_name = "viewMode")]
+        #[qproperty(QString, properties_json, cxx_name = "propertiesJson")]
         type Backend = super::BackendRust;
 
         /// Opens the initial folder: `path` if given, otherwise the home folder.
@@ -75,6 +76,11 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "chooseViewMode"]
         fn choose_view_mode(self: Pin<&mut Backend>, mode: i32);
+
+        /// Reads the Properties details for `path` into `propertiesJson`.
+        #[qinvokable]
+        #[cxx_name = "inspect"]
+        fn inspect(self: Pin<&mut Backend>, path: &QString);
 
         #[qinvokable]
         #[cxx_name = "toggleHiddenFiles"]
@@ -126,6 +132,7 @@ pub struct BackendRust {
     can_go_forward: bool,
     can_paste: bool,
     view_mode: i32,
+    properties_json: QString,
     session: Session,
 }
 
@@ -152,6 +159,7 @@ impl Default for BackendRust {
             can_go_forward: false,
             can_paste: false,
             view_mode: view_mode_to_i32(session.view_mode()),
+            properties_json: QString::from("{}"),
             session,
         }
     }
@@ -159,12 +167,11 @@ impl Default for BackendRust {
 
 /// Loads the user's settings. A broken file is reported and the defaults are used.
 fn load_config() -> Config {
-    let xdg = std::env::var_os("XDG_CONFIG_HOME");
-    let home = std::env::var_os("HOME");
-    match config_file_path(xdg.as_deref(), home.as_deref()) {
-        Some(path) => Config::load(&path).unwrap_or_default(),
-        None => Config::default(),
-    }
+    Config::load_user(
+        std::env::var_os("XDG_CONFIG_HOME").as_deref(),
+        std::env::var_os("HOME").as_deref(),
+    )
+    .unwrap_or_default()
 }
 
 fn sort_key_to_i32(key: SortKey) -> i32 {
@@ -327,6 +334,14 @@ impl qobject::Backend {
         self.as_mut()
             .with_session(|s| s.set_view_mode(view_mode_from_i32(mode)));
         self.sync_state();
+    }
+
+    pub fn inspect(mut self: Pin<&mut Self>, path: &QString) {
+        let path = PathBuf::from(String::from(path));
+        match nexusfm_session::inspect(&path) {
+            Ok(json) => self.as_mut().set_properties_json(to_qstring(&json)),
+            Err(message) => self.as_mut().set_error_text(to_qstring(&message)),
+        }
     }
 
     pub fn toggle_hidden_files(mut self: Pin<&mut Self>) {
