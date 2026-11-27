@@ -14,6 +14,7 @@ class QMenu;
 class QListWidget;
 class QListWidgetItem;
 class QTreeView;
+class TitleBar;
 
 class MainWindow : public QMainWindow
 {
@@ -21,8 +22,13 @@ class MainWindow : public QMainWindow
 
 public:
     explicit MainWindow(const QString &startPath, QWidget *parent = nullptr);
+    ~MainWindow() override;
 
     void navigateTo(const QString &path);
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override;
+    void changeEvent(QEvent *event) override;
 
 private slots:
     void goBack();
@@ -55,6 +61,8 @@ private:
     bool loadDirectory(const QString &path);
     void updateNavigationActions();
     void updateSortIndicator();
+    Qt::Edges resizeEdgesAt(const QPoint &globalPos) const;
+    void setResizeCursor(Qt::Edges edges);
 
     nfm::Settings m_settings;
     QString m_currentPath;
@@ -80,6 +88,10 @@ private:
     QAction *m_copyAction = nullptr;
     QAction *m_pasteAction = nullptr;
     QMenu *m_contextMenu = nullptr;
+
+    TitleBar *m_titleBar = nullptr;
+    QWidget *m_toolBar = nullptr;
+    bool m_resizeCursorActive = false;
 
     // Internal clipboard for cut/copy/paste between folders.
     QStringList m_clipboard;
