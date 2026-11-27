@@ -1,0 +1,11 @@
+[package]
+name = "nexusfm-filesystem"
+description = "Filesystem backend for NexusFM (directory listing; GIO/GVFS comes later)"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+nexusfm-core = { path = "../core" }
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,0 +1,9 @@
+[package]
+name = "nexusfm"
+description = "NexusFM file manager"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+nexusfm-core = { path = "../core" }
+nexusfm-filesystem = { path = "../filesystem" }
