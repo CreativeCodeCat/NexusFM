@@ -613,7 +613,7 @@ Items are grouped by subsystem and roughly ordered by implementation dependencie
 - [x] Qt 6 Quick (QML) frontend
 - [x] Main window and navigation toolbar
 - [ ] Sidebar and Places
-- [ ] Icon, detailed and compact views
+- [x] Icon, detailed and compact views
 - [x] Basic file opening
 - [x] Basic file operations
 - [x] Status bar

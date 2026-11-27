@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::QString;
-use nexusfm_config::{Config, config_file_path};
+use nexusfm_config::{Config, ViewMode, config_file_path};
 use nexusfm_core::SortKey;
 use nexusfm_session::{Listing, Session, listing_json, parse_paths, places_json};
 
@@ -38,6 +38,7 @@ pub mod qobject {
         #[qproperty(bool, can_go_back, cxx_name = "canGoBack")]
         #[qproperty(bool, can_go_forward, cxx_name = "canGoForward")]
         #[qproperty(bool, can_paste, cxx_name = "canPaste")]
+        #[qproperty(i32, view_mode, cxx_name = "viewMode")]
         type Backend = super::BackendRust;
 
         /// Opens the initial folder: `path` if given, otherwise the home folder.
@@ -69,6 +70,11 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "sortBy"]
         fn sort_by(self: Pin<&mut Backend>, key: i32);
+
+        /// Sets the layout: 0 detailed, 1 compact, 2 icon.
+        #[qinvokable]
+        #[cxx_name = "chooseViewMode"]
+        fn choose_view_mode(self: Pin<&mut Backend>, mode: i32);
 
         #[qinvokable]
         #[cxx_name = "toggleHiddenFiles"]
@@ -119,6 +125,7 @@ pub struct BackendRust {
     can_go_back: bool,
     can_go_forward: bool,
     can_paste: bool,
+    view_mode: i32,
     session: Session,
 }
 
@@ -144,6 +151,7 @@ impl Default for BackendRust {
             can_go_back: false,
             can_go_forward: false,
             can_paste: false,
+            view_mode: view_mode_to_i32(session.view_mode()),
             session,
         }
     }
@@ -175,6 +183,22 @@ fn sort_key_from_i32(value: i32) -> SortKey {
     }
 }
 
+fn view_mode_to_i32(mode: ViewMode) -> i32 {
+    match mode {
+        ViewMode::Detailed => 0,
+        ViewMode::Compact => 1,
+        ViewMode::Icon => 2,
+    }
+}
+
+fn view_mode_from_i32(value: i32) -> ViewMode {
+    match value {
+        1 => ViewMode::Compact,
+        2 => ViewMode::Icon,
+        _ => ViewMode::Detailed,
+    }
+}
+
 fn to_qstring(text: &str) -> QString {
     QString::from(text)
 }
@@ -203,6 +227,8 @@ impl qobject::Backend {
         self.as_mut().set_show_hidden(hidden);
         self.as_mut().set_sort_key(sort_key_to_i32(order.key));
         self.as_mut().set_descending(order.descending);
+        let view = self.as_mut().with_session(|s| s.view_mode());
+        self.as_mut().set_view_mode(view_mode_to_i32(view));
     }
 
     /// Shows a folder's contents, or the error if it could not be read.
@@ -295,6 +321,12 @@ impl qobject::Backend {
         self.as_mut()
             .with_session(|s| s.sort_by(sort_key_from_i32(key)));
         self.refresh();
+    }
+
+    pub fn choose_view_mode(mut self: Pin<&mut Self>, mode: i32) {
+        self.as_mut()
+            .with_session(|s| s.set_view_mode(view_mode_from_i32(mode)));
+        self.sync_state();
     }
 
     pub fn toggle_hidden_files(mut self: Pin<&mut Self>) {

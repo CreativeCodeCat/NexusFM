@@ -4,7 +4,7 @@ A lightweight file manager written in Rust, with a Qt 6 Quick (QML) interface.
 
 ## Features
 
-- Browse directories in a detailed file list. Click a column header to sort; click again to reverse.
+- Browse directories as a detailed list, a compact list or a grid of icons (View menu). Click a column header to sort; click again to reverse.
 - Navigate with Back, Forward, Up, Home and Reload, or type a path in the location bar.
 - Places sidebar with Home, Desktop, Documents, Downloads, Music, Pictures, Videos and the file system root.
 - Show or hide hidden files (View menu or `Ctrl+H`).
@@ -81,6 +81,7 @@ Settings are read from `$XDG_CONFIG_HOME/nexusfm/config.toml`, or `~/.config/nex
 
 ```toml
 show_hidden = false
+view = "detailed"   # "detailed", "compact" or "icon"
 
 [sort]
 key = "name"        # "name", "size" or "modified"
