@@ -3,6 +3,7 @@ name = "nexusfm-ffi"
 description = "C ABI over the NexusFM core, used by the Qt Widgets frontend"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 
 [lib]
 crate-type = ["staticlib", "rlib"]
