@@ -7,6 +7,7 @@ license.workspace = true
 
 [dependencies]
 nexusfm-core = { path = "../core" }
+nexusfm-bookmarks = { path = "../bookmarks" }
 nexusfm-config = { path = "../config" }
 nexusfm-filesystem = { path = "../filesystem" }
 nexusfm-operations = { path = "../operations" }

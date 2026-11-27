@@ -177,12 +177,12 @@ Items are grouped by subsystem and roughly ordered by implementation dependencie
 
 ### Bookmarks
 
-- [ ] User-defined bookmarks
-- [ ] Add and remove bookmarks
-- [ ] Reorder bookmarks
-- [ ] Rename bookmarks
-- [ ] Bookmark context menus
-- [ ] Bookmark persistence
+- [x] User-defined bookmarks
+- [x] Add and remove bookmarks
+- [x] Reorder bookmarks
+- [x] Rename bookmarks
+- [x] Bookmark context menus
+- [x] Bookmark persistence
 - [ ] Drag directories into the sidebar to create bookmarks
 - [ ] Bookmark separators
 - [ ] Bookmark icons
@@ -316,12 +316,12 @@ Items are grouped by subsystem and roughly ordered by implementation dependencie
 
 ## 8. Bookmarks (`bookmarks` crate)
 
-- [ ] Add bookmarks
-- [ ] Remove bookmarks
-- [ ] Rename bookmarks
-- [ ] Reorder bookmarks
-- [ ] Persist bookmarks in the XDG config directory
-- [ ] Display bookmarks in the sidebar
+- [x] Add bookmarks
+- [x] Remove bookmarks
+- [x] Rename bookmarks
+- [x] Reorder bookmarks
+- [x] Persist bookmarks in the XDG config directory
+- [x] Display bookmarks in the sidebar
 - [ ] Bookmark icons
 - [ ] Bookmark separators
 - [ ] Import and export bookmarks

@@ -28,6 +28,9 @@ ApplicationWindow {
 
     property var entries: []
     property var places: []
+    // The bookmark whose context menu is open, and its current name.
+    property int bookmarkIndex: -1
+    property string bookmarkName: ""
     property var properties: ({})
     // Selected row indexes. Reassigned, never mutated, so bindings update.
     property var selected: []
@@ -276,6 +279,12 @@ ApplicationWindow {
         onTriggered: backend.chooseViewMode(2)
     }
     Action {
+        id: addBookmarkAction
+        text: qsTr("Bookmark This Folder")
+        shortcut: "Ctrl+D"
+        onTriggered: backend.addBookmark()
+    }
+    Action {
         id: quitAction
         text: qsTr("Quit")
         shortcut: StandardKey.Quit
@@ -341,6 +350,10 @@ ApplicationWindow {
                     MenuItem { action: forwardAction }
                     MenuItem { action: upAction }
                     MenuItem { action: homeAction }
+                }
+                Menu {
+                    title: qsTr("&Bookmarks")
+                    MenuItem { action: addBookmarkAction }
                 }
                 Menu {
                     title: qsTr("&Help")
@@ -423,12 +436,40 @@ ApplicationWindow {
                 model: window.places
                 ScrollBar.vertical: ScrollBar {}
 
-                delegate: ItemDelegate {
+                delegate: Item {
                     required property var modelData
                     width: sidebar.width
-                    text: modelData.label
-                    highlighted: backend.currentPath === modelData.path
-                    onClicked: backend.navigate(modelData.path)
+                    height: 30
+
+                    Label {
+                        visible: modelData.kind === "header"
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.left: parent.left
+                        anchors.leftMargin: 12
+                        text: modelData.label
+                        font.bold: true
+                        color: window.palette.placeholderText
+                    }
+
+                    ItemDelegate {
+                        visible: modelData.kind !== "header"
+                        anchors.fill: parent
+                        text: modelData.label
+                        highlighted: backend.currentPath === modelData.path
+                        onClicked: backend.navigate(modelData.path)
+                    }
+
+                    // Right-click on a bookmark opens its menu; left clicks pass through.
+                    MouseArea {
+                        anchors.fill: parent
+                        enabled: modelData.kind === "bookmark"
+                        acceptedButtons: Qt.RightButton
+                        onClicked: {
+                            window.bookmarkIndex = modelData.index;
+                            window.bookmarkName = modelData.label;
+                            bookmarkMenu.popup();
+                        }
+                    }
                 }
             }
 
@@ -764,6 +805,29 @@ ApplicationWindow {
         height: grip * 2
     }
 
+    // ---- Bookmark context menu ---------------------------------------------
+
+    Menu {
+        id: bookmarkMenu
+        MenuItem {
+            text: qsTr("Rename...")
+            onTriggered: window.askText(qsTr("Rename Bookmark"), qsTr("Bookmark name (empty for the folder name):"), window.bookmarkName, "renameBookmark")
+        }
+        MenuItem {
+            text: qsTr("Move Up")
+            onTriggered: backend.moveBookmark(window.bookmarkIndex, -1)
+        }
+        MenuItem {
+            text: qsTr("Move Down")
+            onTriggered: backend.moveBookmark(window.bookmarkIndex, 1)
+        }
+        MenuSeparator {}
+        MenuItem {
+            text: qsTr("Remove Bookmark")
+            onTriggered: backend.removeBookmark(window.bookmarkIndex)
+        }
+    }
+
     // ---- Dialogs -----------------------------------------------------------
 
     Dialog {
@@ -785,6 +849,11 @@ ApplicationWindow {
 
         onAccepted: {
             const name = inputField.text.trim();
+            if (action === "renameBookmark") {
+                // An empty name restores the folder's own name.
+                backend.renameBookmark(window.bookmarkIndex, inputField.text);
+                return;
+            }
             if (name.length === 0)
                 return;
             if (action === "create")

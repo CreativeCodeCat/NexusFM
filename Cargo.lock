@@ -555,6 +555,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "nexusfm-bookmarks"
+version = "0.1.0"
+dependencies = [
+ "tempfile",
+]
+
+[[package]]
 name = "nexusfm-config"
 version = "0.1.0"
 dependencies = [
@@ -600,6 +607,7 @@ dependencies = [
  "cxx-qt",
  "cxx-qt-build",
  "cxx-qt-lib",
+ "nexusfm-bookmarks",
  "nexusfm-config",
  "nexusfm-core",
  "nexusfm-session",
@@ -610,6 +618,7 @@ dependencies = [
 name = "nexusfm-session"
 version = "0.1.0"
 dependencies = [
+ "nexusfm-bookmarks",
  "nexusfm-config",
  "nexusfm-core",
  "nexusfm-filesystem",
