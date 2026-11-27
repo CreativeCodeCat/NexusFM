@@ -6,11 +6,12 @@
 //! Details shown in a file's Properties dialog.
 
 use std::fs;
-use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use nexusfm_core::{EntryKind, NexusError, Result};
+use nexusfm_core::{EntryKind, Result};
+
+use crate::metadata::read_metadata;
 
 /// What a file's Properties dialog shows.
 #[derive(Debug, Clone, PartialEq)]
@@ -45,24 +46,9 @@ impl FileProperties {
 /// Reads the Properties details for `path`. A symbolic link is described
 /// itself, not the file it points to.
 pub fn read_properties(path: &Path) -> Result<FileProperties> {
-    let meta = fs::symlink_metadata(path).map_err(|err| NexusError::io(path, err))?;
-    let file_type = meta.file_type();
-
-    let kind = if file_type.is_symlink() {
-        EntryKind::Symlink
-    } else if file_type.is_dir() {
-        EntryKind::Directory
-    } else if file_type.is_file() {
-        EntryKind::File
-    } else {
-        EntryKind::Other
-    };
-
-    let link_target = if kind == EntryKind::Symlink {
-        fs::read_link(path).ok()
-    } else {
-        None
-    };
+    let meta = read_metadata(path)?;
+    let kind = meta.kind;
+    let link_target = meta.link_target.clone();
 
     let mime_type = if kind == EntryKind::Directory {
         "inode/directory".to_string()
@@ -81,13 +67,13 @@ pub fn read_properties(path: &Path) -> Result<FileProperties> {
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_else(|| path.display().to_string()),
         kind,
-        size: meta.len(),
-        modified: meta.modified().ok(),
-        accessed: meta.accessed().ok(),
-        created: meta.created().ok(),
-        mode: meta.mode() & 0o777,
-        owner: user_name(meta.uid()),
-        group: group_name(meta.gid()),
+        size: meta.size,
+        modified: meta.modified,
+        accessed: meta.accessed,
+        created: meta.created,
+        mode: meta.mode,
+        owner: user_name(meta.uid),
+        group: group_name(meta.gid),
         link_target,
         mime_type,
         default_application,

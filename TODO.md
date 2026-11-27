@@ -16,7 +16,7 @@ Items are grouped by subsystem and roughly ordered by implementation dependencie
 - [x] Logging and diagnostics using `tracing`
 - [ ] Replace `std::fs` backend with GIO/GVFS
 - [x] Preserve `list_directory` as the filesystem abstraction boundary
-- [ ] Filesystem metadata abstraction
+- [x] Filesystem metadata abstraction
 - [x] MIME type detection
 - [x] Default application lookup
 - [x] File monitoring and automatic directory refresh
