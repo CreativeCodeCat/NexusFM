@@ -1,3 +1,8 @@
+// Copyright (C) 2026 NexusFM
+//
+// This file is part of NexusFM, licensed under the GNU General Public License
+// version 3. See the LICENSE file for details.
+
 /*
  * C interface to the Rust core (crates/ffi). Keep in sync with crates/ffi/src/lib.rs.
  */

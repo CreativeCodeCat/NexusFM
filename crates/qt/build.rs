@@ -1,3 +1,8 @@
+// Copyright (C) 2026 NexusFM
+//
+// This file is part of NexusFM, licensed under the GNU General Public License
+// version 3. See the LICENSE file for details.
+
 //! Builds the Qt Widgets frontend in `qt/` with CMake.
 //!
 //! The Rust core is compiled first, into a separate target directory. Cargo holds

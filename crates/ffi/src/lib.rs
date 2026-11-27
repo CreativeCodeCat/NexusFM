@@ -1,3 +1,8 @@
+// Copyright (C) 2026 NexusFM
+//
+// This file is part of NexusFM, licensed under the GNU General Public License
+// version 3. See the LICENSE file for details.
+
 //! C ABI over the NexusFM core, for the Qt Widgets frontend.
 //!
 //! The Qt side (`qt/`) includes `nexusfm_ffi.h` and links the static library

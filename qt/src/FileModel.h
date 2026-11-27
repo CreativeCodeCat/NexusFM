@@ -1,3 +1,8 @@
+// Copyright (C) 2026 NexusFM
+//
+// This file is part of NexusFM, licensed under the GNU General Public License
+// version 3. See the LICENSE file for details.
+
 // Table model for a directory listing. Order comes from the Rust core, so the
 // model does not sort on its own.
 #pragma once
