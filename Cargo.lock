@@ -610,6 +610,7 @@ dependencies = [
 name = "nexusfm-bookmarks"
 version = "0.1.0"
 dependencies = [
+ "nexusfm-core",
  "tempfile",
 ]
 

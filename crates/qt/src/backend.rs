@@ -47,6 +47,11 @@ pub mod qobject {
         #[cxx_name = "start"]
         fn start(self: Pin<&mut Backend>, path: &QString);
 
+        /// Opens text typed in the location bar: a path, `~/...` or a `file://` URI.
+        #[qinvokable]
+        #[cxx_name = "openLocation"]
+        fn open_location(self: Pin<&mut Backend>, text: &QString);
+
         #[qinvokable]
         #[cxx_name = "navigate"]
         fn navigate(self: Pin<&mut Backend>, path: &QString);
@@ -403,6 +408,12 @@ impl qobject::Backend {
         self.as_mut().refresh_sidebar();
 
         let result = self.as_mut().with_session(|s| s.navigate(&target));
+        self.show_listing(result);
+    }
+
+    pub fn open_location(mut self: Pin<&mut Self>, text: &QString) {
+        let text = String::from(text);
+        let result = self.as_mut().with_session(|s| s.open_location(&text));
         self.show_listing(result);
     }
 

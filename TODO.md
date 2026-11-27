@@ -24,7 +24,7 @@ Items are grouped by subsystem and roughly ordered by implementation dependencie
 - [x] Symlink handling
 - [x] Hidden file handling
 - [x] Permissions and ownership metadata
-- [ ] URI-based location abstraction
+- [x] URI-based location abstraction
 - [ ] Support local, remote and virtual filesystem locations
 
 ## 2. Qt Quick (QML) Frontend
