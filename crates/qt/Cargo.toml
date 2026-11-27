@@ -1,7 +1,19 @@
 [package]
 name = "nexusfm-qt"
-description = "Launches the NexusFM Qt Widgets window (C++ in qt/, built with CMake)"
+description = "NexusFM file manager: Qt Quick (QML) interface with a Rust backend"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 build = "build.rs"
+
+[dependencies]
+nexusfm-core = { path = "../core" }
+nexusfm-config = { path = "../config" }
+nexusfm-session = { path = "../session" }
+cxx = "1"
+cxx-qt = "0.10"
+cxx-qt-lib = { version = "0.10", features = ["qt_gui", "qt_qml", "qt_quickcontrols"] }
+
+[build-dependencies]
+cxx-qt-build = { version = "0.10", features = ["link_qt_object_files"] }
+qt-build-utils = "0.10"
