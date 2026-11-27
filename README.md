@@ -62,6 +62,19 @@ cargo test --workspace
 cargo clippy --workspace --all-targets
 ```
 
+## Desktop entry and icon
+
+The window icon in the taskbar and task switcher comes from a desktop entry. To install it for your user:
+
+```
+cargo install --path crates/qt
+mkdir -p ~/.local/share/applications ~/.local/share/icons/hicolor/512x512/apps
+cp packaging/nexusfm.desktop ~/.local/share/applications/
+cp assets/icon.png ~/.local/share/icons/hicolor/512x512/apps/nexusfm.png
+```
+
+The entry runs `nexusfm-qt`, so the binary must be on your `PATH` (`cargo install` puts it in `~/.cargo/bin`).
+
 ## Configuration
 
 Settings are read from `$XDG_CONFIG_HOME/nexusfm/config.toml`, or `~/.config/nexusfm/config.toml` if `XDG_CONFIG_HOME` is not set.
