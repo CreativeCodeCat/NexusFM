@@ -26,8 +26,18 @@ ApplicationWindow {
         id: backend
     }
 
+    // Picks up changes made to the open folder by other programs.
+    Timer {
+        interval: 1000
+        running: true
+        repeat: true
+        onTriggered: backend.checkForChanges()
+    }
+
     property var entries: []
     property var places: []
+    // The folder the current entries belong to.
+    property string shownPath: ""
     // The bookmark whose context menu is open, and its current name.
     property int bookmarkIndex: -1
     property string bookmarkName: ""
@@ -48,9 +58,19 @@ ApplicationWindow {
         target: backend
 
         function onEntriesJsonChanged() {
+            // A refresh of the same folder keeps the selected items; a new folder clears it.
+            const previous = window.selectedPaths();
+            const samePlace = window.shownPath === backend.currentPath;
             window.entries = JSON.parse(backend.entriesJson);
-            window.selected = [];
-            window.anchorRow = -1;
+            window.shownPath = backend.currentPath;
+            if (samePlace && previous.length > 0) {
+                window.selected = window.entries
+                    .map(function (entry, row) { return previous.indexOf(entry.path) >= 0 ? row : -1; })
+                    .filter(function (row) { return row >= 0; });
+            } else {
+                window.selected = [];
+                window.anchorRow = -1;
+            }
         }
 
         function onPlacesJsonChanged() {
@@ -74,7 +94,9 @@ ApplicationWindow {
     // ---- Helpers ----------------------------------------------------------
 
     function selectedPaths() {
-        return selected.map(function (row) { return entries[row].path; });
+        return selected
+            .filter(function (row) { return row < entries.length; })
+            .map(function (row) { return entries[row].path; });
     }
 
     function selectedEntries() {

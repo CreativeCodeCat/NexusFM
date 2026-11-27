@@ -8,6 +8,7 @@ A lightweight file manager written in Rust, with a Qt 6 Quick (QML) interface.
 - Navigate with Back, Forward, Up, Home and Reload, or type a path in the location bar.
 - Places sidebar with Home, Desktop, Documents, Downloads, Music, Pictures, Videos and the file system root.
 - Bookmarks: press `Ctrl+D` to bookmark the current folder. Right-click a bookmark in the sidebar to rename, move or remove it. Bookmarks are saved to `~/.config/nexusfm/bookmarks`, in the GTK bookmarks format.
+- Automatic refresh: changes made to the open folder by other programs appear within about a second. Selected items stay selected.
 - Show or hide hidden files (View menu or `Ctrl+H`).
 - Open folders in the window; open files with their default application.
 - File operations from the Edit menu and right-click menu: New Folder, Cut, Copy, Paste, Rename (`F2`) and Move to Trash (`Delete`). Existing files are never overwritten.
