@@ -439,7 +439,7 @@ ApplicationWindow {
                 placeholderText: qsTr("Location")
                 text: backend.currentPath
                 selectByMouse: true
-                onAccepted: backend.navigate(text)
+                onAccepted: backend.openLocation(text)
             }
         }
 

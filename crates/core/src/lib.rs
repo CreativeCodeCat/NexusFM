@@ -47,6 +47,10 @@ impl NexusError {
     }
 }
 
+pub mod location;
+
+pub use location::Location;
+
 pub type Result<T> = std::result::Result<T, NexusError>;
 
 /// What kind of object a directory entry is.

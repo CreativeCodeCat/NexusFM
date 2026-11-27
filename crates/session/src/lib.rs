@@ -15,7 +15,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use nexusfm_bookmarks::Bookmark;
 use nexusfm_config::{Config, ViewMode};
-use nexusfm_core::{Entry, EntryKind, SortKey, SortOrder, sort_entries};
+use nexusfm_core::{Entry, EntryKind, Location, SortKey, SortOrder, sort_entries};
 use nexusfm_filesystem::{FileProperties, list_directory, read_properties};
 use nexusfm_operations as ops;
 
@@ -197,6 +197,15 @@ impl Session {
         }
         self.current = Some(next);
         Ok(listing)
+    }
+
+    /// Opens a location typed by the user: a path, `~/...`, or a `file://` URI.
+    /// Other URI schemes are not supported yet.
+    pub fn open_location(&mut self, text: &str) -> Result<Listing, String> {
+        match Location::parse(text, &self.home).map_err(|err| err.to_string())? {
+            Location::Local(path) => self.navigate(&path),
+            Location::Remote(uri) => Err(format!("{uri} is not supported yet")),
+        }
     }
 
     /// Opens the parent of the current folder.
@@ -546,6 +555,24 @@ mod tests {
         assert!(s.navigate(&dir.path().join("missing")).is_err());
         assert_eq!(s.current(), Some(dir.path()));
         assert!(!s.can_go_back());
+    }
+
+    #[test]
+    fn open_location_accepts_paths_and_uris() {
+        let dir = tempfile::tempdir().unwrap();
+        let docs = dir.path().join("My Docs");
+        fs::create_dir(&docs).unwrap();
+        let mut s = session(dir.path());
+
+        s.open_location(&format!(
+            "file://{}",
+            nexusfm_core::location::encode(&docs.to_string_lossy())
+        ))
+        .unwrap();
+        assert_eq!(s.current(), Some(docs.as_path()));
+
+        assert!(s.open_location("smb://server/share").is_err());
+        assert!(s.open_location("not a path").is_err());
     }
 
     #[test]

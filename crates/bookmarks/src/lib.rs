@@ -13,6 +13,8 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use nexusfm_core::location::{decode, encode};
+
 /// A bookmarked folder.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Bookmark {
@@ -48,7 +50,7 @@ pub fn parse(text: &str) -> Vec<Bookmark> {
                 Some((uri, label)) => (uri, Some(label.trim().to_string())),
                 None => (line, None),
             };
-            let path = decode_uri(uri.strip_prefix("file://")?)?;
+            let path = PathBuf::from(decode(uri.strip_prefix("file://")?)?);
             Some(Bookmark {
                 path,
                 label: label.filter(|label| !label.is_empty()),
@@ -62,7 +64,7 @@ pub fn format(bookmarks: &[Bookmark]) -> String {
     let mut text = String::new();
     for bookmark in bookmarks {
         text.push_str("file://");
-        text.push_str(&encode_path(&bookmark.path));
+        text.push_str(&encode(&bookmark.path.to_string_lossy()));
         if let Some(label) = bookmark.label.as_deref().filter(|label| !label.is_empty()) {
             text.push(' ');
             text.push_str(&label.replace(['\n', '\r'], " "));
@@ -101,38 +103,6 @@ pub fn bookmarks_file(
         None => PathBuf::from(home.filter(|v| !v.is_empty())?).join(".config"),
     };
     Some(base.join("nexusfm").join("bookmarks"))
-}
-
-/// Percent-encodes a path for use in a `file://` URI, keeping `/` and unreserved characters.
-fn encode_path(path: &Path) -> String {
-    let mut out = String::new();
-    for byte in path.to_string_lossy().bytes() {
-        match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b'/' => {
-                out.push(byte as char)
-            }
-            _ => out.push_str(&format!("%{byte:02X}")),
-        }
-    }
-    out
-}
-
-/// Decodes percent-escapes in a URI path. Returns `None` for malformed escapes.
-fn decode_uri(encoded: &str) -> Option<PathBuf> {
-    let bytes = encoded.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'%' {
-            let hex = std::str::from_utf8(bytes.get(i + 1..i + 3)?).ok()?;
-            out.push(u8::from_str_radix(hex, 16).ok()?);
-            i += 3;
-        } else {
-            out.push(bytes[i]);
-            i += 1;
-        }
-    }
-    Some(PathBuf::from(String::from_utf8(out).ok()?))
 }
 
 #[cfg(test)]
