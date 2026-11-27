@@ -171,7 +171,8 @@ ApplicationWindow {
         if (entry.kind === "directory")
             backend.navigate(entry.path);
         else
-            Qt.openUrlExternally("file://" + encodeURI(entry.path));
+            // Remote entries already carry a URI; local paths need the file:// prefix.
+            Qt.openUrlExternally(entry.path.indexOf("://") > 0 ? entry.path : "file://" + encodeURI(entry.path));
     }
 
     function askText(title, label, initial, action) {

@@ -16,7 +16,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use nexusfm_bookmarks::Bookmark;
 use nexusfm_config::{Config, ViewMode};
 use nexusfm_core::{Entry, EntryKind, Location, SortKey, SortOrder, sort_entries};
-use nexusfm_filesystem::{FileProperties, list_directory, read_properties};
+use nexusfm_filesystem::{
+    FileProperties, is_uri, list_directory, list_uri, parent_location, read_properties,
+};
 use nexusfm_operations as ops;
 
 /// A folder's contents, filtered and sorted according to the session settings.
@@ -204,18 +206,13 @@ impl Session {
     pub fn open_location(&mut self, text: &str) -> Result<Listing, String> {
         match Location::parse(text, &self.home).map_err(|err| err.to_string())? {
             Location::Local(path) => self.navigate(&path),
-            Location::Remote(uri) => Err(format!("{uri} is not supported yet")),
+            Location::Remote(uri) => self.navigate(Path::new(&uri)),
         }
     }
 
     /// Opens the parent of the current folder.
     pub fn go_up(&mut self) -> Result<Listing, String> {
-        let Some(parent) = self
-            .current
-            .as_deref()
-            .and_then(Path::parent)
-            .map(Path::to_path_buf)
-        else {
+        let Some(parent) = self.current.as_deref().and_then(parent_location) else {
             return Err("This folder has no parent".into());
         };
         self.navigate(&parent)
@@ -245,8 +242,12 @@ impl Session {
 
     /// Lists `path` with the current hidden-file and sort settings.
     pub fn list(&self, path: &Path) -> Result<Listing, String> {
-        let mut entries =
-            list_directory(path).map_err(|err| format!("Cannot read {}: {err}", path.display()))?;
+        let listed = if is_uri(path) {
+            list_uri(&path.to_string_lossy()).map_err(|err| err.to_string())
+        } else {
+            list_directory(path).map_err(|err| format!("Cannot read {}: {err}", path.display()))
+        };
+        let mut entries = listed?;
         if !self.config.show_hidden {
             entries.retain(|entry| !entry.name.starts_with('.'));
         }
@@ -260,6 +261,7 @@ impl Session {
     /// Creates a folder in the current folder.
     pub fn create_folder(&self, name: &str) -> Result<(), String> {
         let parent = self.require_current()?;
+        reject_remote(parent)?;
         ops::create_directory(parent, name)
             .map(|_| ())
             .map_err(|err| err.to_string())
@@ -267,6 +269,7 @@ impl Session {
 
     /// Renames `path` within its folder.
     pub fn rename(&self, path: &Path, new_name: &str) -> Result<(), String> {
+        reject_remote(path)?;
         ops::rename(path, new_name)
             .map(|_| ())
             .map_err(|err| err.to_string())
@@ -276,7 +279,11 @@ impl Session {
     pub fn trash(&self, paths: &[PathBuf]) -> Vec<String> {
         paths
             .iter()
-            .filter_map(|path| ops::move_to_trash(path).err().map(|err| err.to_string()))
+            .filter_map(|path| {
+                reject_remote(path)
+                    .err()
+                    .or_else(|| ops::move_to_trash(path).err().map(|err| err.to_string()))
+            })
             .collect()
     }
 
@@ -294,6 +301,9 @@ impl Session {
         let Ok(dest) = self.require_current().map(Path::to_path_buf) else {
             return vec!["No folder is open".into()];
         };
+        if let Err(message) = reject_remote(&dest) {
+            return vec![message];
+        }
 
         let cut = self.clipboard_is_cut;
         let mut errors = Vec::new();
@@ -360,8 +370,24 @@ impl Session {
 }
 
 /// Removes trailing separators and `.` components so equal folders compare equal.
+/// URIs are kept as they are, since their `//` is not a path separator.
 fn clean(path: &Path) -> PathBuf {
+    if is_uri(path) {
+        return path.to_path_buf();
+    }
     path.components().collect()
+}
+
+/// File operations work on local files only for now.
+fn reject_remote(path: &Path) -> Result<(), String> {
+    if is_uri(path) {
+        Err(format!(
+            "File operations on {} are not supported yet",
+            path.display()
+        ))
+    } else {
+        Ok(())
+    }
 }
 
 /// Reads `user-dirs.dirs` into `(KEY, path)` pairs, expanding `$HOME`.
@@ -555,6 +581,15 @@ mod tests {
         assert!(s.navigate(&dir.path().join("missing")).is_err());
         assert_eq!(s.current(), Some(dir.path()));
         assert!(!s.can_go_back());
+    }
+
+    #[test]
+    fn file_operations_are_refused_on_remote_locations() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = session(dir.path());
+        let remote = PathBuf::from("smb://server/share/a.txt");
+        assert!(s.rename(&remote, "b.txt").is_err());
+        assert_eq!(s.trash(std::slice::from_ref(&remote)).len(), 1);
     }
 
     #[test]

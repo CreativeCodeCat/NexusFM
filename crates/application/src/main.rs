@@ -16,7 +16,7 @@ use std::process::ExitCode;
 
 use nexusfm_config::Config;
 use nexusfm_core::{EntryKind, sort_entries};
-use nexusfm_filesystem::list_directory;
+use nexusfm_filesystem::{is_uri, list_directory, list_uri};
 use tracing::{debug, error, warn};
 use tracing_subscriber::EnvFilter;
 
@@ -37,11 +37,16 @@ fn main() -> ExitCode {
         .unwrap_or_else(|| PathBuf::from("."));
     debug!(path = %dir.display(), "listing directory");
 
-    let mut entries = match list_directory(&dir) {
+    let listing = if is_uri(&dir) {
+        list_uri(&dir.to_string_lossy())
+    } else {
+        list_directory(&dir)
+    };
+    let mut entries = match listing {
         Ok(entries) => entries,
         Err(err) => {
             error!(path = %dir.display(), %err, "cannot read directory");
-            eprintln!("nexusfm: cannot read {}: {err}", dir.display());
+            eprintln!("nexusfm: {err}");
             return ExitCode::FAILURE;
         }
     };
