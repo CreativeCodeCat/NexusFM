@@ -943,11 +943,52 @@ ApplicationWindow {
         modal: true
         standardButtons: Dialog.Ok
         anchors.centerIn: Overlay.overlay
+        width: 480
 
-        Label {
-            width: 320
-            wrapMode: Text.Wrap
-            text: qsTr("NexusFM is a lightweight file manager built with Rust and Qt Quick.")
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 10
+
+            Image {
+                Layout.alignment: Qt.AlignHCenter
+                Layout.topMargin: 8
+                source: "qrc:/qt/qml/NexusFM/icon.png"
+                sourceSize: Qt.size(96, 96)
+                width: 96
+                height: 96
+                smooth: true
+            }
+
+            Label {
+                Layout.fillWidth: true
+                horizontalAlignment: Text.AlignHCenter
+                text: "NexusFM"
+                font.pointSize: 18
+                font.bold: true
+            }
+
+            Label {
+                Layout.fillWidth: true
+                horizontalAlignment: Text.AlignHCenter
+                text: qsTr("Version %1").arg("0.1.0")
+                color: window.palette.placeholderText
+            }
+
+            Label {
+                Layout.fillWidth: true
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.Wrap
+                text: qsTr("A lightweight file manager built with Rust and Qt Quick.")
+            }
+
+            Label {
+                Layout.fillWidth: true
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.Wrap
+                font.pointSize: 9
+                color: window.palette.placeholderText
+                text: qsTr("Licensed under the GNU General Public License v3.")
+            }
         }
     }
 }
