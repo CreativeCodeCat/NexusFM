@@ -1,0 +1,9 @@
+[package]
+name = "nexusfm-bookmarks"
+description = "Bookmarked folders for NexusFM, stored in the GTK-compatible bookmarks format"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

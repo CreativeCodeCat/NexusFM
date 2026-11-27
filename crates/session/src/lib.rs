@@ -13,6 +13,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use nexusfm_bookmarks::Bookmark;
 use nexusfm_config::{Config, ViewMode};
 use nexusfm_core::{Entry, EntryKind, SortKey, SortOrder, sort_entries};
 use nexusfm_filesystem::{FileProperties, list_directory, read_properties};
@@ -42,6 +43,7 @@ pub struct Session {
     forward: Vec<PathBuf>,
     clipboard: Vec<PathBuf>,
     clipboard_is_cut: bool,
+    bookmarks: Vec<Bookmark>,
 }
 
 impl Session {
@@ -55,6 +57,59 @@ impl Session {
             forward: Vec::new(),
             clipboard: Vec::new(),
             clipboard_is_cut: false,
+            bookmarks: Vec::new(),
+        }
+    }
+
+    /// The bookmarked folders, in sidebar order.
+    pub fn bookmarks(&self) -> &[Bookmark] {
+        &self.bookmarks
+    }
+
+    /// Replaces the bookmark list, for example after loading it from disk.
+    pub fn set_bookmarks(&mut self, bookmarks: Vec<Bookmark>) {
+        self.bookmarks = bookmarks;
+    }
+
+    /// Bookmarks the current folder. Returns `false` if it is already bookmarked
+    /// or no folder is open.
+    pub fn add_bookmark(&mut self) -> bool {
+        let Some(current) = self.current.clone() else {
+            return false;
+        };
+        if self
+            .bookmarks
+            .iter()
+            .any(|bookmark| bookmark.path == current)
+        {
+            return false;
+        }
+        self.bookmarks.push(Bookmark::new(current));
+        true
+    }
+
+    /// Removes the bookmark at `index`, if there is one.
+    pub fn remove_bookmark(&mut self, index: usize) {
+        if index < self.bookmarks.len() {
+            self.bookmarks.remove(index);
+        }
+    }
+
+    /// Gives the bookmark at `index` a custom name. An empty name restores the folder name.
+    pub fn rename_bookmark(&mut self, index: usize, name: &str) {
+        if let Some(bookmark) = self.bookmarks.get_mut(index) {
+            let name = name.trim();
+            bookmark.label = (!name.is_empty()).then(|| name.to_string());
+        }
+    }
+
+    /// Moves the bookmark at `index` by `delta` places (negative is up).
+    pub fn move_bookmark(&mut self, index: usize, delta: isize) {
+        let Some(target) = index.checked_add_signed(delta) else {
+            return;
+        };
+        if index < self.bookmarks.len() && target < self.bookmarks.len() {
+            self.bookmarks.swap(index, target);
         }
     }
 
@@ -355,17 +410,32 @@ pub fn listing_json(listing: &Listing) -> String {
     serde_json::Value::Array(items).to_string()
 }
 
-/// Serializes places as a JSON array of `{label, path}` objects.
-pub fn places_json(places: &[Place]) -> String {
-    let items: Vec<serde_json::Value> = places
+/// Serializes the sidebar as a JSON array: the places, then a `header` item and
+/// the bookmarks. Each item has `kind` (`place`, `header` or `bookmark`) and
+/// `label`. Places and bookmarks have `path`, and bookmarks also have `index`
+/// (their position in the bookmark list, for rename, move and remove).
+pub fn sidebar_json(places: &[Place], bookmarks: &[Bookmark]) -> String {
+    let mut items: Vec<serde_json::Value> = places
         .iter()
         .map(|place| {
             serde_json::json!({
+                "kind": "place",
                 "label": place.label,
                 "path": place.path.to_string_lossy(),
             })
         })
         .collect();
+    if !bookmarks.is_empty() {
+        items.push(serde_json::json!({ "kind": "header", "label": "Bookmarks" }));
+    }
+    for (index, bookmark) in bookmarks.iter().enumerate() {
+        items.push(serde_json::json!({
+            "kind": "bookmark",
+            "index": index,
+            "label": bookmark.display_name(),
+            "path": bookmark.path.to_string_lossy(),
+        }));
+    }
     serde_json::Value::Array(items).to_string()
 }
 
@@ -625,6 +695,49 @@ mod tests {
         let paths = parse_paths(r#"["/a/b", "/c"]"#).unwrap();
         assert_eq!(paths, vec![PathBuf::from("/a/b"), PathBuf::from("/c")]);
         assert!(parse_paths("not json").is_err());
+    }
+
+    #[test]
+    fn bookmarks_can_be_added_renamed_moved_and_removed() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a");
+        let b = dir.path().join("b");
+        fs::create_dir_all(&a).unwrap();
+        fs::create_dir_all(&b).unwrap();
+
+        let mut s = session(dir.path());
+        assert!(!s.add_bookmark(), "no folder is open yet");
+        s.navigate(&a).unwrap();
+        assert!(s.add_bookmark());
+        assert!(!s.add_bookmark(), "a folder is only bookmarked once");
+        s.navigate(&b).unwrap();
+        assert!(s.add_bookmark());
+
+        s.rename_bookmark(0, "Alpha");
+        assert_eq!(s.bookmarks()[0].display_name(), "Alpha");
+        s.move_bookmark(1, -1);
+        assert_eq!(s.bookmarks()[0].path, b);
+        s.remove_bookmark(0);
+        assert_eq!(s.bookmarks().len(), 1);
+        assert_eq!(s.bookmarks()[0].path, a);
+    }
+
+    #[test]
+    fn sidebar_lists_places_then_bookmarks() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = session(dir.path());
+        s.navigate(dir.path()).unwrap();
+        s.add_bookmark();
+        let value: serde_json::Value =
+            serde_json::from_str(&sidebar_json(&s.places(), s.bookmarks())).unwrap();
+        let items = value.as_array().unwrap();
+        let header = items
+            .iter()
+            .position(|item| item["kind"] == "header")
+            .unwrap();
+        assert_eq!(items[header + 1]["kind"], "bookmark");
+        assert_eq!(items[header + 1]["index"], 0);
+        assert_eq!(items[0]["kind"], "place");
     }
 
     #[test]

@@ -13,7 +13,7 @@ use cxx_qt::CxxQtType;
 use cxx_qt_lib::QString;
 use nexusfm_config::{Config, ViewMode};
 use nexusfm_core::SortKey;
-use nexusfm_session::{Listing, Session, listing_json, parse_paths, places_json};
+use nexusfm_session::{Listing, Session, listing_json, parse_paths, sidebar_json};
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -81,6 +81,24 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "inspect"]
         fn inspect(self: Pin<&mut Backend>, path: &QString);
+
+        /// Bookmarks the current folder.
+        #[qinvokable]
+        #[cxx_name = "addBookmark"]
+        fn add_bookmark(self: Pin<&mut Backend>);
+
+        #[qinvokable]
+        #[cxx_name = "removeBookmark"]
+        fn remove_bookmark(self: Pin<&mut Backend>, index: i32);
+
+        #[qinvokable]
+        #[cxx_name = "renameBookmark"]
+        fn rename_bookmark(self: Pin<&mut Backend>, index: i32, name: &QString);
+
+        /// Moves a bookmark by `delta` places; negative moves it up.
+        #[qinvokable]
+        #[cxx_name = "moveBookmark"]
+        fn move_bookmark(self: Pin<&mut Backend>, index: i32, delta: i32);
 
         #[qinvokable]
         #[cxx_name = "toggleHiddenFiles"]
@@ -211,6 +229,14 @@ fn view_mode_from_i32(value: i32) -> ViewMode {
     }
 }
 
+/// Where the bookmark list is stored, from the environment.
+fn bookmarks_path() -> Option<PathBuf> {
+    nexusfm_bookmarks::bookmarks_file(
+        std::env::var_os("XDG_CONFIG_HOME").as_deref(),
+        std::env::var_os("HOME").as_deref(),
+    )
+}
+
 fn to_qstring(text: &str) -> QString {
     QString::from(text)
 }
@@ -264,6 +290,59 @@ impl qobject::Backend {
         self.sync_state();
     }
 
+    /// Rebuilds the sidebar (places and bookmarks) for QML.
+    fn refresh_sidebar(mut self: Pin<&mut Self>) {
+        let json = self
+            .as_mut()
+            .with_session(|s| sidebar_json(&s.places(), s.bookmarks()));
+        self.as_mut().set_places_json(to_qstring(&json));
+    }
+
+    /// Saves the bookmark list and refreshes the sidebar.
+    fn persist_bookmarks(mut self: Pin<&mut Self>) {
+        if let Some(path) = bookmarks_path() {
+            let list = self.as_mut().with_session(|s| s.bookmarks().to_vec());
+            if let Err(err) = nexusfm_bookmarks::save(&path, &list) {
+                self.as_mut()
+                    .set_error_text(to_qstring(&format!("cannot save bookmarks: {err}")));
+            }
+        }
+        self.refresh_sidebar();
+    }
+
+    pub fn add_bookmark(mut self: Pin<&mut Self>) {
+        if self.as_mut().with_session(|s| s.add_bookmark()) {
+            self.persist_bookmarks();
+        }
+    }
+
+    pub fn remove_bookmark(mut self: Pin<&mut Self>, index: i32) {
+        let Ok(index) = usize::try_from(index) else {
+            return;
+        };
+        self.as_mut().with_session(|s| s.remove_bookmark(index));
+        self.persist_bookmarks();
+    }
+
+    pub fn rename_bookmark(mut self: Pin<&mut Self>, index: i32, name: &QString) {
+        let Ok(index) = usize::try_from(index) else {
+            return;
+        };
+        let name = String::from(name);
+        self.as_mut()
+            .with_session(|s| s.rename_bookmark(index, &name));
+        self.persist_bookmarks();
+    }
+
+    pub fn move_bookmark(mut self: Pin<&mut Self>, index: i32, delta: i32) {
+        let Ok(index) = usize::try_from(index) else {
+            return;
+        };
+        self.as_mut()
+            .with_session(|s| s.move_bookmark(index, delta as isize));
+        self.persist_bookmarks();
+    }
+
     /// Saves the current settings to `config.lua`. A failure is shown as an error.
     fn persist_settings(mut self: Pin<&mut Self>) {
         let config = self.as_mut().with_session(|s| s.settings().clone());
@@ -307,8 +386,11 @@ impl qobject::Backend {
             PathBuf::from(text)
         };
 
-        let places = self.as_mut().with_session(|s| places_json(&s.places()));
-        self.as_mut().set_places_json(to_qstring(&places));
+        let bookmarks =
+            bookmarks_path().map(|path| nexusfm_bookmarks::load(&path).unwrap_or_default());
+        self.as_mut()
+            .with_session(|s| s.set_bookmarks(bookmarks.unwrap_or_default()));
+        self.as_mut().refresh_sidebar();
 
         let result = self.as_mut().with_session(|s| s.navigate(&target));
         self.show_listing(result);

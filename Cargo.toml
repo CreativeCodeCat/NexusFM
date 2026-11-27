@@ -5,6 +5,7 @@ members = [
     "crates/filesystem",
     "crates/config",
     "crates/session",
+    "crates/bookmarks",
     "crates/operations",
     "crates/qt",
     "crates/application",
