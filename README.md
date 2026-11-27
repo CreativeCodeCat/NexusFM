@@ -10,6 +10,7 @@ A lightweight file manager written in Rust, with a Qt 6 Quick (QML) interface.
 - Show or hide hidden files (View menu or `Ctrl+H`).
 - Open folders in the window; open files with their default application.
 - File operations from the Edit menu and right-click menu: New Folder, Cut, Copy, Paste, Rename (`F2`) and Move to Trash (`Delete`). Existing files are never overwritten.
+- File properties (Alt+Enter, or Properties in the context menu): type, size, dates, permissions, owner, group and symlink target.
 - Custom title bar with minimize, maximize and close buttons, and edge resizing.
 - Settings from a TOML config file (see below).
 
@@ -77,18 +78,39 @@ The entry runs `nexusfm-qt`, so the binary must be on your `PATH` (`cargo instal
 
 ## Configuration
 
-Settings are read from `$XDG_CONFIG_HOME/nexusfm/config.toml`, or `~/.config/nexusfm/config.toml` if `XDG_CONFIG_HOME` is not set.
+Settings are read from the NexusFM config folder: `$XDG_CONFIG_HOME/nexusfm/`, or `~/.config/nexusfm/` if `XDG_CONFIG_HOME` is not set.
+
+The app looks for these files, in order:
+
+1. `config.lua`, if it exists. It must return a table.
+2. `config.toml`, if `config.lua` does not exist.
+3. Otherwise the built-in defaults.
+
+`config.lua`:
+
+```lua
+return {
+  show_hidden = false,
+  view = "detailed",        -- "detailed", "compact" or "icon"
+  sort = {
+    key = "name",           -- "name", "size" or "modified"
+    descending = false,
+  },
+}
+```
+
+The same settings in `config.toml`:
 
 ```toml
 show_hidden = false
-view = "detailed"   # "detailed", "compact" or "icon"
+view = "detailed"
 
 [sort]
-key = "name"        # "name", "size" or "modified"
+key = "name"
 descending = false
 ```
 
-A missing file uses the defaults. An invalid file is reported and the defaults are used. Unknown keys are ignored.
+Settings you leave out keep their defaults, and unknown keys are ignored. If `config.lua` fails to load, a warning is logged and the defaults are used. The script can use the math, string, table and UTF-8 libraries. It cannot read or write files, run programs, or load other code, and it is stopped after two seconds.
 
 ## Logging
 

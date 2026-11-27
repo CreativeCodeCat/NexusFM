@@ -11,11 +11,11 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::UNIX_EPOCH;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use nexusfm_config::{Config, ViewMode};
 use nexusfm_core::{Entry, EntryKind, SortKey, SortOrder, sort_entries};
-use nexusfm_filesystem::list_directory;
+use nexusfm_filesystem::{FileProperties, list_directory, read_properties};
 use nexusfm_operations as ops;
 
 /// A folder's contents, filtered and sorted according to the session settings.
@@ -364,6 +364,38 @@ pub fn places_json(places: &[Place]) -> String {
     serde_json::Value::Array(items).to_string()
 }
 
+/// Reads the Properties details for `path` and serializes them as a JSON object.
+///
+/// Keys: `name`, `path`, `kind`, `size`, `modified`, `accessed`, `created`
+/// (seconds since the Unix epoch, or `null`), `permissions` (as `rwxr-x---`),
+/// `owner`, `group`, and `linkTarget` (or `null`).
+pub fn inspect(path: &Path) -> Result<String, String> {
+    let props = read_properties(path).map_err(|err| err.to_string())?;
+    Ok(properties_json(&props))
+}
+
+/// Serializes already-read properties as a JSON object. See [`inspect`].
+pub fn properties_json(props: &FileProperties) -> String {
+    let secs = |time: Option<SystemTime>| {
+        time.and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+            .map(|after| after.as_secs())
+    };
+    serde_json::json!({
+        "name": props.name,
+        "path": props.path.to_string_lossy(),
+        "kind": kind_name(props.kind),
+        "size": props.size,
+        "modified": secs(props.modified),
+        "accessed": secs(props.accessed),
+        "created": secs(props.created),
+        "permissions": props.permission_string(),
+        "owner": props.owner,
+        "group": props.group,
+        "linkTarget": props.link_target.as_ref().map(|target| target.to_string_lossy().into_owned()),
+    })
+    .to_string()
+}
+
 /// Parses a JSON array of path strings, such as a selection from the front end.
 pub fn parse_paths(json: &str) -> Result<Vec<PathBuf>, String> {
     let values: Vec<String> =
@@ -563,6 +595,21 @@ mod tests {
         assert_eq!(s.view_mode(), ViewMode::Detailed);
         s.set_view_mode(ViewMode::Compact);
         assert_eq!(s.view_mode(), ViewMode::Compact);
+    }
+
+    #[test]
+    fn inspect_describes_a_file_as_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("a.txt");
+        fs::write(&file, b"hello").unwrap();
+
+        let value: serde_json::Value = serde_json::from_str(&inspect(&file).unwrap()).unwrap();
+        assert_eq!(value["name"], "a.txt");
+        assert_eq!(value["kind"], "file");
+        assert_eq!(value["size"], 5);
+        assert_eq!(value["permissions"].as_str().unwrap().len(), 9);
+        assert!(value["linkTarget"].is_null());
+        assert!(inspect(&dir.path().join("missing")).is_err());
     }
 
     #[test]

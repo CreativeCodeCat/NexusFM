@@ -13,6 +13,9 @@ use std::path::Path;
 
 use nexusfm_core::{Entry, EntryKind, NexusError, Result};
 
+mod properties;
+pub use properties::{FileProperties, permission_string, read_properties};
+
 /// Lists the immediate children of `dir`, unsorted.
 ///
 /// Entries that cannot be read (for example, a file removed while listing) are

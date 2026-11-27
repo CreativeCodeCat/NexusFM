@@ -445,7 +445,7 @@ Items are grouped by subsystem and roughly ordered by implementation dependencie
 - [ ] Toolbar extension hooks
 - [ ] Menu extension hooks
 - [ ] Sidebar extension hooks
-- [ ] File properties extension hooks
+- [x] File properties extension hooks
 - [ ] Custom actions
 - [ ] Extension lifecycle management
 - [ ] Extension API documentation

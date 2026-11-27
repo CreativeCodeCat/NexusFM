@@ -28,6 +28,7 @@ ApplicationWindow {
 
     property var entries: []
     property var places: []
+    property var properties: ({})
     // Selected row indexes. Reassigned, never mutated, so bindings update.
     property var selected: []
     property int anchorRow: -1
@@ -55,6 +56,10 @@ ApplicationWindow {
 
         function onCurrentPathChanged() {
             location.text = backend.currentPath;
+        }
+
+        function onPropertiesJsonChanged() {
+            window.properties = JSON.parse(backend.propertiesJson);
         }
 
         function onErrorTextChanged() {
@@ -132,6 +137,11 @@ ApplicationWindow {
         }
     }
 
+    function showProperties(path) {
+        backend.inspect(path);
+        propertiesDialog.open();
+    }
+
     function openEntry(entry) {
         if (entry.kind === "directory")
             backend.navigate(entry.path);
@@ -182,6 +192,13 @@ ApplicationWindow {
         shortcut: "F2"
         enabled: window.selectedCount === 1
         onTriggered: window.askText(qsTr("Rename"), qsTr("New name:"), window.entries[window.selected[0]].name, "rename")
+    }
+    Action {
+        id: propertiesAction
+        text: qsTr("Properties")
+        shortcut: "Alt+Return"
+        enabled: window.selectedCount === 1
+        onTriggered: window.showProperties(window.entries[window.selected[0]].path)
     }
     Action {
         id: trashAction
@@ -664,6 +681,8 @@ ApplicationWindow {
         MenuSeparator {}
         MenuItem { action: renameAction }
         MenuItem { action: trashAction }
+        MenuSeparator {}
+        MenuItem { action: propertiesAction }
     }
 
 
@@ -779,6 +798,65 @@ ApplicationWindow {
         id: errorPanel
         message: backend.errorText
         onClosed: backend.clearError()
+    }
+
+    Dialog {
+        id: propertiesDialog
+        title: qsTr("Properties")
+        modal: true
+        standardButtons: Dialog.Close
+        anchors.centerIn: Overlay.overlay
+
+        GridLayout {
+            columns: 2
+            columnSpacing: 16
+            rowSpacing: 6
+
+            Label { text: qsTr("Name") }
+            Label { text: window.properties.name ?? ""; Layout.fillWidth: true; elide: Text.ElideMiddle }
+
+            Label { text: qsTr("Type") }
+            Label { text: window.typeName(window.properties.kind ?? "") }
+
+            Label { text: qsTr("Location") }
+            Label {
+                text: (window.properties.path ?? "").replace(/\/[^\/]*$/, "") || "/"
+                Layout.fillWidth: true
+                elide: Text.ElideMiddle
+            }
+
+            Label { text: qsTr("Size"); visible: window.properties.kind !== "directory" }
+            Label {
+                visible: window.properties.kind !== "directory"
+                text: window.formatSize(window.properties.size ?? 0)
+            }
+
+            Label { text: qsTr("Link target"); visible: !!window.properties.linkTarget }
+            Label {
+                visible: !!window.properties.linkTarget
+                text: window.properties.linkTarget ?? ""
+                Layout.fillWidth: true
+                elide: Text.ElideMiddle
+            }
+
+            Label { text: qsTr("Modified") }
+            Label { text: window.formatDate(window.properties.modified) }
+
+            Label { text: qsTr("Accessed") }
+            Label { text: window.formatDate(window.properties.accessed) }
+
+            Label { text: qsTr("Created") }
+            Label { text: window.formatDate(window.properties.created) }
+
+            Label { text: qsTr("Permissions") }
+            Label { text: window.properties.permissions ?? "" }
+
+            Label { text: qsTr("Owner") }
+            Label { text: window.properties.owner ?? "" }
+
+            Label { text: qsTr("Group") }
+            Label { text: window.properties.group ?? "" }
+        }
     }
 
     Dialog {
