@@ -7,6 +7,7 @@ license.workspace = true
 
 [dependencies]
 nexusfm-core = { path = "../core" }
+mime_guess = "2"
 
 [dev-dependencies]
 tempfile = "3"

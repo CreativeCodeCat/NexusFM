@@ -29,6 +29,10 @@ pub struct FileProperties {
     pub group: String,
     /// Where a symbolic link points, if this is one.
     pub link_target: Option<PathBuf>,
+    /// MIME type guessed from the file name, such as `text/plain`.
+    pub mime_type: String,
+    /// The desktop entry that opens this type by default, if one is set.
+    pub default_application: Option<String>,
 }
 
 impl FileProperties {
@@ -60,6 +64,16 @@ pub fn read_properties(path: &Path) -> Result<FileProperties> {
         None
     };
 
+    let mime_type = if kind == EntryKind::Directory {
+        "inode/directory".to_string()
+    } else {
+        mime_guess::from_path(path)
+            .first_or_octet_stream()
+            .essence_str()
+            .to_string()
+    };
+    let default_application = crate::default_application(&mime_type);
+
     Ok(FileProperties {
         path: path.to_path_buf(),
         name: path
@@ -75,6 +89,8 @@ pub fn read_properties(path: &Path) -> Result<FileProperties> {
         owner: user_name(meta.uid()),
         group: group_name(meta.gid()),
         link_target,
+        mime_type,
+        default_application,
     })
 }
 
@@ -147,6 +163,14 @@ mod tests {
         assert!(props.modified.is_some());
         assert!(props.link_target.is_none());
         assert!(!props.owner.is_empty());
+    }
+
+    #[test]
+    fn guesses_mime_type_from_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("notes.txt");
+        fs::write(&file, b"x").unwrap();
+        assert_eq!(read_properties(&file).unwrap().mime_type, "text/plain");
     }
 
     #[test]

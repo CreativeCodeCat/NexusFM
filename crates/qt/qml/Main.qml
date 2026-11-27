@@ -818,6 +818,15 @@ ApplicationWindow {
             Label { text: qsTr("Type") }
             Label { text: window.typeName(window.properties.kind ?? "") }
 
+            Label { text: qsTr("MIME type") }
+            Label { text: window.properties.mimeType ?? "" }
+
+            Label { text: qsTr("Opens with"); visible: !!window.properties.defaultApplication }
+            Label {
+                visible: !!window.properties.defaultApplication
+                text: window.properties.defaultApplication ?? ""
+            }
+
             Label { text: qsTr("Location") }
             Label {
                 text: (window.properties.path ?? "").replace(/\/[^\/]*$/, "") || "/"
