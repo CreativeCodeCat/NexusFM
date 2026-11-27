@@ -6,4 +6,7 @@ edition.workspace = true
 
 [dependencies]
 nexusfm-core = { path = "../core" }
+nexusfm-config = { path = "../config" }
 nexusfm-filesystem = { path = "../filesystem" }
+tracing.workspace = true
+tracing-subscriber.workspace = true

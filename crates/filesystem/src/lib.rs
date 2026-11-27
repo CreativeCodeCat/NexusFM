@@ -18,8 +18,12 @@ pub fn list_directory(dir: &Path) -> io::Result<Vec<Entry>> {
 
     for item in fs::read_dir(dir)? {
         let Ok(item) = item else { continue };
-        let Ok(file_type) = item.file_type() else { continue };
-        let Ok(metadata) = item.metadata() else { continue };
+        let Ok(file_type) = item.file_type() else {
+            continue;
+        };
+        let Ok(metadata) = item.metadata() else {
+            continue;
+        };
 
         let kind = if file_type.is_symlink() {
             EntryKind::Symlink
