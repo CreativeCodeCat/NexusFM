@@ -11,8 +11,43 @@
 use std::cmp::Ordering;
 use std::path::PathBuf;
 use std::time::SystemTime;
+use thiserror::Error;
 
 use serde::{Deserialize, Serialize};
+
+/// Errors shared by filesystem, operation, and application layers.
+#[derive(Debug, Error)]
+pub enum NexusError {
+    #[error("{path}: {source}")]
+    Io {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("{} already exists", .0.display())]
+    AlreadyExists(PathBuf),
+    #[error("{} does not exist", .0.display())]
+    NotFound(PathBuf),
+    #[error("\"{0}\" is not a valid name")]
+    InvalidName(String),
+    #[error("cannot move or copy {} into itself", .0.display())]
+    IntoItself(PathBuf),
+    #[error("cannot move {path} to the trash: {reason}")]
+    Trash { path: PathBuf, reason: String },
+    #[error("{0}")]
+    Message(String),
+}
+
+impl NexusError {
+    pub fn io(path: &std::path::Path, source: std::io::Error) -> Self {
+        Self::Io {
+            path: path.to_path_buf(),
+            source,
+        }
+    }
+}
+
+pub type Result<T> = std::result::Result<T, NexusError>;
 
 /// What kind of object a directory entry is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

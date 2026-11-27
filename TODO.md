@@ -11,7 +11,7 @@ Items are grouped by subsystem and roughly ordered by implementation dependencie
 - [x] Entry types and sorting rules (directories first, case-insensitive names) in `nexusfm-core`
 - [x] Directory listing behind `list_directory` in `nexusfm-filesystem`
 - [x] Terminal listing stand-in in the `nexusfm` binary
-- [ ] Shared error types and user-facing error reporting across crates
+- [x] Shared error types and user-facing error reporting across crates
 - [x] Configuration loading from TOML using XDG config directories
 - [x] Logging and diagnostics using `tracing`
 - [ ] Replace `std::fs` backend with GIO/GVFS
