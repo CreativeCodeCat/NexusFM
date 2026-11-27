@@ -70,6 +70,11 @@ impl Session {
         self.config.show_hidden
     }
 
+    /// The settings as they stand now, including changes made in the window.
+    pub fn settings(&self) -> &Config {
+        &self.config
+    }
+
     pub fn view_mode(&self) -> ViewMode {
         self.config.view
     }

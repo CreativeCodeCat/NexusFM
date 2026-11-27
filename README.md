@@ -78,15 +78,7 @@ The entry runs `nexusfm-qt`, so the binary must be on your `PATH` (`cargo instal
 
 ## Configuration
 
-Settings are read from the NexusFM config folder: `$XDG_CONFIG_HOME/nexusfm/`, or `~/.config/nexusfm/` if `XDG_CONFIG_HOME` is not set.
-
-The app looks for these files, in order:
-
-1. `config.lua`, if it exists. It must return a table.
-2. `config.toml`, if `config.lua` does not exist.
-3. Otherwise the built-in defaults.
-
-`config.lua`:
+Settings are a Lua script, `config.lua`, in the NexusFM config folder: `$XDG_CONFIG_HOME/nexusfm/`, or `~/.config/nexusfm/` if `XDG_CONFIG_HOME` is not set. The script must return a table:
 
 ```lua
 return {
@@ -99,18 +91,11 @@ return {
 }
 ```
 
-The same settings in `config.toml`:
+Settings you leave out keep their defaults, and unknown keys are ignored. Without a `config.lua`, the defaults are used. The script can use the math, string, table and UTF-8 libraries. It cannot read or write files, run programs, or load other code, and it is stopped after two seconds.
 
-```toml
-show_hidden = false
-view = "detailed"
+The Qt window saves its settings to `config.lua` when you change the sort order, the view, or hidden files. Comments and custom code in the file are replaced at that point, so keep anything you want to keep in a separate file. The first time the app rewrites your file, the original is copied to `config.lua.bak`, and that copy is not overwritten by later saves.
 
-[sort]
-key = "name"
-descending = false
-```
-
-Settings you leave out keep their defaults, and unknown keys are ignored. If `config.lua` fails to load, a warning is logged and the defaults are used. The script can use the math, string, table and UTF-8 libraries. It cannot read or write files, run programs, or load other code, and it is stopped after two seconds.
+If a `config.lua` has an error, a warning is logged and the defaults are used. Earlier versions read `config.toml`; that file is no longer read. If it is present without a `config.lua`, a warning asks you to move its settings.
 
 ## Logging
 

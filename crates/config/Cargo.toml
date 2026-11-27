@@ -8,7 +8,6 @@ license.workspace = true
 [dependencies]
 nexusfm-core = { path = "../core" }
 serde.workspace = true
-toml.workspace = true
 thiserror.workspace = true
 mlua.workspace = true
 
