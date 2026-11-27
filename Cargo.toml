@@ -19,6 +19,5 @@ license = "GPL-3.0-only"
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 mlua = { version = "0.12", features = ["lua54", "vendored", "serde"] }
-toml = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

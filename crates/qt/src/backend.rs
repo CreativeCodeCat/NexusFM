@@ -167,11 +167,16 @@ impl Default for BackendRust {
 
 /// Loads the user's settings. A broken file is reported and the defaults are used.
 fn load_config() -> Config {
-    Config::load_user(
+    match Config::load_user(
         std::env::var_os("XDG_CONFIG_HOME").as_deref(),
         std::env::var_os("HOME").as_deref(),
-    )
-    .unwrap_or_default()
+    ) {
+        Ok(config) => config,
+        Err(err) => {
+            eprintln!("nexusfm: {err}; using default configuration");
+            Config::default()
+        }
+    }
 }
 
 fn sort_key_to_i32(key: SortKey) -> i32 {
@@ -259,6 +264,16 @@ impl qobject::Backend {
         self.sync_state();
     }
 
+    /// Saves the current settings to `config.lua`. A failure is shown as an error.
+    fn persist_settings(mut self: Pin<&mut Self>) {
+        let config = self.as_mut().with_session(|s| s.settings().clone());
+        let xdg = std::env::var_os("XDG_CONFIG_HOME");
+        let home = std::env::var_os("HOME");
+        if let Err(err) = config.save_user(xdg.as_deref(), home.as_deref()) {
+            self.as_mut().set_error_text(to_qstring(&err.to_string()));
+        }
+    }
+
     /// Shows the first error from a batch of operations, if any.
     fn show_errors(mut self: Pin<&mut Self>, errors: &[String]) {
         if !errors.is_empty() {
@@ -327,12 +342,14 @@ impl qobject::Backend {
     pub fn sort_by(mut self: Pin<&mut Self>, key: i32) {
         self.as_mut()
             .with_session(|s| s.sort_by(sort_key_from_i32(key)));
+        self.as_mut().persist_settings();
         self.refresh();
     }
 
     pub fn choose_view_mode(mut self: Pin<&mut Self>, mode: i32) {
         self.as_mut()
             .with_session(|s| s.set_view_mode(view_mode_from_i32(mode)));
+        self.as_mut().persist_settings();
         self.sync_state();
     }
 
@@ -346,6 +363,7 @@ impl qobject::Backend {
 
     pub fn toggle_hidden_files(mut self: Pin<&mut Self>) {
         self.as_mut().with_session(|s| s.toggle_hidden());
+        self.as_mut().persist_settings();
         self.refresh();
     }
 
