@@ -90,4 +90,4 @@ Set `RUST_LOG` to control log output from the terminal listing, for example `RUS
 
 ## License
 
-NexusFM is free software, licensed under the GNU General Public License, version 3. See [LICENSE](LICENSE).
+NexusFM is free software, licensed under the GNU General Public License, version 3. See [LICENSE](LICENSE) for the license text and [NOTICE](NOTICE) for the copyright notice.
