@@ -49,6 +49,16 @@ size_t nfm_listing_count(const NfmListing *listing);
 bool nfm_listing_get(const NfmListing *listing, size_t index, NfmEntry *out);
 void nfm_listing_free(NfmListing *listing);
 
+/* File operations. Each returns NULL on success, or an error message that must
+ * be released with nfm_string_free. */
+char *nfm_create_directory(const char *parent, const char *name);
+char *nfm_create_file(const char *parent, const char *name);
+char *nfm_rename(const char *path, const char *new_name);
+char *nfm_copy(const char *src, const char *dest_dir);
+char *nfm_move(const char *src, const char *dest_dir);
+char *nfm_move_to_trash(const char *path);
+void nfm_string_free(char *message);
+
 #ifdef __cplusplus
 }
 #endif

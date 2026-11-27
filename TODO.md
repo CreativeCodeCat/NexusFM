@@ -221,11 +221,11 @@ Items are grouped by subsystem and roughly ordered by implementation dependencie
 - [ ] Context menu for tabs
 - [ ] Open
 - [ ] Open with
-- [ ] Cut, copy and paste
-- [ ] Rename
-- [ ] Move to trash
+- [x] Cut, copy and paste
+- [x] Rename
+- [x] Move to trash
 - [ ] Delete permanently
-- [ ] Create folder
+- [x] Create folder
 - [ ] Create document
 - [ ] Compress
 - [ ] Extract
@@ -257,12 +257,12 @@ Items are grouped by subsystem and roughly ordered by implementation dependencie
 
 ### Basic Operations
 
-- [ ] Copy
-- [ ] Move
-- [ ] Rename
-- [ ] Delete to trash
+- [x] Copy
+- [x] Move
+- [x] Rename
+- [x] Delete to trash
 - [ ] Permanent deletion
-- [ ] Create folder
+- [x] Create folder
 - [ ] Create empty file
 - [ ] Create symbolic link
 - [ ] Create hard link where supported
@@ -615,7 +615,7 @@ Items are grouped by subsystem and roughly ordered by implementation dependencie
 - [ ] Sidebar and Places
 - [ ] Icon, detailed and compact views
 - [x] Basic file opening
-- [ ] Basic file operations
+- [x] Basic file operations
 - [x] Status bar
 
 ### Phase 2 — Everyday File Management

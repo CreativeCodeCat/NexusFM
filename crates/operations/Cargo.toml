@@ -1,0 +1,12 @@
+[package]
+name = "nexusfm-operations"
+description = "File operations for NexusFM: create, rename, copy, move and trash"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+trash = "5"
+
+[dev-dependencies]
+tempfile = "3"

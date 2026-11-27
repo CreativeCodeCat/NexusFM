@@ -16,6 +16,7 @@ use std::time::UNIX_EPOCH;
 use nexusfm_config::{Config, config_file_path};
 use nexusfm_core::{Entry, EntryKind, SortKey, SortOrder, sort_entries};
 use nexusfm_filesystem::list_directory;
+use nexusfm_operations as ops;
 
 /// Entry kinds as seen by C. Must match `NfmKind` in the header.
 pub const KIND_FILE: u8 = 0;
@@ -261,6 +262,130 @@ pub unsafe extern "C" fn nfm_listing_free(listing: *mut NfmListing) {
     }
 }
 
+/// Turns the outcome of a file operation into a C error message.
+/// Returns null on success. Free a non-null result with [`nfm_string_free`].
+fn op_result(outcome: ops::Result<()>) -> *mut c_char {
+    match outcome {
+        Ok(()) => ptr::null_mut(),
+        Err(err) => c_string(&err.to_string()).into_raw(),
+    }
+}
+
+/// Reads a C string argument. Returns `None` for null.
+///
+/// # Safety
+/// `text` must be null or a valid NUL-terminated string.
+unsafe fn c_arg(text: *const c_char) -> Option<String> {
+    if text.is_null() {
+        return None;
+    }
+    // SAFETY: the caller guarantees `text` is a valid C string.
+    Some(
+        unsafe { CStr::from_ptr(text) }
+            .to_string_lossy()
+            .into_owned(),
+    )
+}
+
+/// Creates a folder `name` inside `parent`. Returns null on success, or an error
+/// message to free with [`nfm_string_free`].
+///
+/// # Safety
+/// `parent` and `name` must be null or valid NUL-terminated strings.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nfm_create_directory(
+    parent: *const c_char,
+    name: *const c_char,
+) -> *mut c_char {
+    // SAFETY: the caller guarantees both strings are valid or null.
+    let (Some(parent), Some(name)) = (unsafe { c_arg(parent) }, unsafe { c_arg(name) }) else {
+        return c_string("missing argument").into_raw();
+    };
+    op_result(ops::create_directory(&PathBuf::from(parent), &name).map(|_| ()))
+}
+
+/// Creates an empty file `name` inside `parent`. Same return convention as
+/// [`nfm_create_directory`].
+///
+/// # Safety
+/// `parent` and `name` must be null or valid NUL-terminated strings.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nfm_create_file(
+    parent: *const c_char,
+    name: *const c_char,
+) -> *mut c_char {
+    // SAFETY: the caller guarantees both strings are valid or null.
+    let (Some(parent), Some(name)) = (unsafe { c_arg(parent) }, unsafe { c_arg(name) }) else {
+        return c_string("missing argument").into_raw();
+    };
+    op_result(ops::create_empty_file(&PathBuf::from(parent), &name).map(|_| ()))
+}
+
+/// Renames `path` to `new_name` in the same folder. Same return convention.
+///
+/// # Safety
+/// `path` and `new_name` must be null or valid NUL-terminated strings.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nfm_rename(path: *const c_char, new_name: *const c_char) -> *mut c_char {
+    // SAFETY: the caller guarantees both strings are valid or null.
+    let (Some(path), Some(new_name)) = (unsafe { c_arg(path) }, unsafe { c_arg(new_name) }) else {
+        return c_string("missing argument").into_raw();
+    };
+    op_result(ops::rename(&PathBuf::from(path), &new_name).map(|_| ()))
+}
+
+/// Copies `src` into the folder `dest_dir`. Same return convention.
+///
+/// # Safety
+/// `src` and `dest_dir` must be null or valid NUL-terminated strings.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nfm_copy(src: *const c_char, dest_dir: *const c_char) -> *mut c_char {
+    // SAFETY: the caller guarantees both strings are valid or null.
+    let (Some(src), Some(dest)) = (unsafe { c_arg(src) }, unsafe { c_arg(dest_dir) }) else {
+        return c_string("missing argument").into_raw();
+    };
+    op_result(ops::copy(&PathBuf::from(src), &PathBuf::from(dest)).map(|_| ()))
+}
+
+/// Moves `src` into the folder `dest_dir`. Same return convention.
+///
+/// # Safety
+/// `src` and `dest_dir` must be null or valid NUL-terminated strings.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nfm_move(src: *const c_char, dest_dir: *const c_char) -> *mut c_char {
+    // SAFETY: the caller guarantees both strings are valid or null.
+    let (Some(src), Some(dest)) = (unsafe { c_arg(src) }, unsafe { c_arg(dest_dir) }) else {
+        return c_string("missing argument").into_raw();
+    };
+    op_result(ops::move_into(&PathBuf::from(src), &PathBuf::from(dest)).map(|_| ()))
+}
+
+/// Moves `path` to the trash. Same return convention.
+///
+/// # Safety
+/// `path` must be null or a valid NUL-terminated string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nfm_move_to_trash(path: *const c_char) -> *mut c_char {
+    // SAFETY: the caller guarantees the string is valid or null.
+    let Some(path) = (unsafe { c_arg(path) }) else {
+        return c_string("missing argument").into_raw();
+    };
+    op_result(ops::move_to_trash(&PathBuf::from(path)))
+}
+
+/// Frees an error message returned by one of the operation functions.
+/// Null is ignored.
+///
+/// # Safety
+/// `message` must be null or a pointer returned by this library, not yet freed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nfm_string_free(message: *mut c_char) {
+    if !message.is_null() {
+        // SAFETY: the caller guarantees the pointer came from `CString::into_raw`.
+        drop(unsafe { CString::from_raw(message) });
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -350,5 +475,21 @@ mod tests {
             assert!(!nfm_listing_get(listing, 0, entry.as_mut_ptr()));
             nfm_listing_free(listing);
         }
+    }
+
+    #[test]
+    fn create_directory_reports_existing_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let parent = CString::new(dir.path().to_str().unwrap()).unwrap();
+        let name = CString::new("sub").unwrap();
+        unsafe {
+            assert!(nfm_create_directory(parent.as_ptr(), name.as_ptr()).is_null());
+            let error = nfm_create_directory(parent.as_ptr(), name.as_ptr());
+            assert!(!error.is_null());
+            let message = CStr::from_ptr(error).to_string_lossy().into_owned();
+            assert!(message.contains("already exists"), "{message}");
+            nfm_string_free(error);
+        }
+        assert!(dir.path().join("sub").is_dir());
     }
 }

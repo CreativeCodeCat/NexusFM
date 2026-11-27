@@ -9,8 +9,12 @@
 #include <QFileInfo>
 #include <QHeaderView>
 #include <QKeySequence>
+#include <QModelIndexList>
 #include <QLabel>
 #include <QIcon>
+#include <QInputDialog>
+#include <QItemSelectionModel>
+#include <QMenu>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMenuBar>
@@ -101,7 +105,37 @@ void MainWindow::setupActions()
     m_showHiddenAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+H")));
     connect(m_showHiddenAction, &QAction::toggled, this, &MainWindow::setShowHidden);
 
+    m_newFolderAction = new QAction(QIcon::fromTheme(QStringLiteral("folder-new")), tr("New Folder..."), this);
+    m_newFolderAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+N")));
+    connect(m_newFolderAction, &QAction::triggered, this, &MainWindow::newFolder);
+
+    m_cutAction = new QAction(QIcon::fromTheme(QStringLiteral("edit-cut")), tr("Cut"), this);
+    m_cutAction->setShortcut(QKeySequence::Cut);
+    connect(m_cutAction, &QAction::triggered, this, &MainWindow::cutSelected);
+
+    m_copyAction = new QAction(QIcon::fromTheme(QStringLiteral("edit-copy")), tr("Copy"), this);
+    m_copyAction->setShortcut(QKeySequence::Copy);
+    connect(m_copyAction, &QAction::triggered, this, &MainWindow::copySelected);
+
+    m_pasteAction = new QAction(QIcon::fromTheme(QStringLiteral("edit-paste")), tr("Paste"), this);
+    m_pasteAction->setShortcut(QKeySequence::Paste);
+    connect(m_pasteAction, &QAction::triggered, this, &MainWindow::pasteClipboard);
+
+    m_renameAction = new QAction(tr("Rename..."), this);
+    m_renameAction->setShortcut(QKeySequence(QStringLiteral("F2")));
+    connect(m_renameAction, &QAction::triggered, this, &MainWindow::renameSelected);
+
+    m_trashAction = new QAction(QIcon::fromTheme(QStringLiteral("user-trash")), tr("Move to Trash"), this);
+    m_trashAction->setShortcut(QKeySequence::Delete);
+    connect(m_trashAction, &QAction::triggered, this, &MainWindow::trashSelected);
+
     // Actions must be on the window for their shortcuts to work everywhere.
+    addAction(m_newFolderAction);
+    addAction(m_cutAction);
+    addAction(m_copyAction);
+    addAction(m_pasteAction);
+    addAction(m_renameAction);
+    addAction(m_trashAction);
     addAction(m_backAction);
     addAction(m_forwardAction);
     addAction(m_upAction);
@@ -115,6 +149,16 @@ void MainWindow::setupMenus()
     auto *quitAction = fileMenu->addAction(tr("&Quit"));
     quitAction->setShortcut(QKeySequence::Quit);
     connect(quitAction, &QAction::triggered, this, &QWidget::close);
+
+    auto *editMenu = menuBar()->addMenu(tr("&Edit"));
+    editMenu->addAction(m_cutAction);
+    editMenu->addAction(m_copyAction);
+    editMenu->addAction(m_pasteAction);
+    editMenu->addSeparator();
+    editMenu->addAction(m_renameAction);
+    editMenu->addAction(m_trashAction);
+    editMenu->addSeparator();
+    editMenu->addAction(m_newFolderAction);
 
     auto *viewMenu = menuBar()->addMenu(tr("&View"));
     viewMenu->addAction(m_showHiddenAction);
@@ -180,6 +224,19 @@ void MainWindow::setupCentral()
     m_view->header()->resizeSection(FileModel::TypeColumn, 90);
     connect(m_view, &QTreeView::activated, this, &MainWindow::onItemActivated);
     connect(m_view->header(), &QHeaderView::sectionClicked, this, &MainWindow::onHeaderClicked);
+    connect(m_view->selectionModel(), &QItemSelectionModel::selectionChanged, this, &MainWindow::updateEditActions);
+    m_view->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_view, &QWidget::customContextMenuRequested, this, &MainWindow::showContextMenu);
+
+    m_contextMenu = new QMenu(this);
+    m_contextMenu->addAction(m_newFolderAction);
+    m_contextMenu->addSeparator();
+    m_contextMenu->addAction(m_cutAction);
+    m_contextMenu->addAction(m_copyAction);
+    m_contextMenu->addAction(m_pasteAction);
+    m_contextMenu->addSeparator();
+    m_contextMenu->addAction(m_renameAction);
+    m_contextMenu->addAction(m_trashAction);
 
     auto *splitter = new QSplitter(Qt::Horizontal, this);
     splitter->addWidget(m_places);
@@ -233,6 +290,7 @@ bool MainWindow::loadDirectory(const QString &path)
 
 void MainWindow::updateNavigationActions()
 {
+    updateEditActions();
     m_backAction->setEnabled(!m_backHistory.isEmpty());
     m_forwardAction->setEnabled(!m_forwardHistory.isEmpty());
     m_upAction->setEnabled(!QDir(m_currentPath).isRoot());
@@ -356,4 +414,127 @@ void MainWindow::onHeaderClicked(int column)
     }
     updateSortIndicator();
     reload();
+}
+
+QStringList MainWindow::selectedPaths() const
+{
+    QStringList paths;
+    const QModelIndexList rows = m_view->selectionModel()->selectedRows();
+    for (const QModelIndex &index : rows) {
+        if (const nfm::FileEntry *entry = m_model->entryAt(index.row()))
+            paths.append(entry->path);
+    }
+    return paths;
+}
+
+void MainWindow::reportErrors(const QString &title, const QStringList &errors)
+{
+    if (errors.isEmpty())
+        return;
+    QMessageBox::warning(this, title, errors.join(QLatin1Char('\n')));
+}
+
+void MainWindow::updateEditActions()
+{
+    const int selected = m_view ? m_view->selectionModel()->selectedRows().size() : 0;
+    m_cutAction->setEnabled(selected > 0);
+    m_copyAction->setEnabled(selected > 0);
+    m_trashAction->setEnabled(selected > 0);
+    m_renameAction->setEnabled(selected == 1);
+    m_pasteAction->setEnabled(!m_clipboard.isEmpty());
+    m_newFolderAction->setEnabled(!m_currentPath.isEmpty());
+}
+
+void MainWindow::newFolder()
+{
+    bool ok = false;
+    const QString name = QInputDialog::getText(this, tr("New Folder"), tr("Folder name:"),
+                                               QLineEdit::Normal, tr("New Folder"), &ok).trimmed();
+    if (!ok)
+        return;
+    const QString error = nfm::ops::createFolder(m_currentPath, name);
+    if (!error.isEmpty())
+        QMessageBox::warning(this, tr("New Folder"), error);
+    reload();
+}
+
+void MainWindow::renameSelected()
+{
+    const QStringList paths = selectedPaths();
+    if (paths.size() != 1)
+        return;
+
+    const QString oldName = QFileInfo(paths.first()).fileName();
+    bool ok = false;
+    const QString newName = QInputDialog::getText(this, tr("Rename"), tr("New name:"),
+                                                  QLineEdit::Normal, oldName, &ok).trimmed();
+    if (!ok || newName == oldName)
+        return;
+
+    const QString error = nfm::ops::rename(paths.first(), newName);
+    if (!error.isEmpty())
+        QMessageBox::warning(this, tr("Rename"), error);
+    reload();
+}
+
+void MainWindow::trashSelected()
+{
+    const QStringList paths = selectedPaths();
+    if (paths.isEmpty())
+        return;
+
+    QStringList errors;
+    for (const QString &path : paths) {
+        const QString error = nfm::ops::moveToTrash(path);
+        if (!error.isEmpty())
+            errors.append(error);
+    }
+    reportErrors(tr("Move to Trash"), errors);
+    reload();
+}
+
+void MainWindow::cutSelected()
+{
+    m_clipboard = selectedPaths();
+    m_clipboardIsCut = true;
+    updateEditActions();
+}
+
+void MainWindow::copySelected()
+{
+    m_clipboard = selectedPaths();
+    m_clipboardIsCut = false;
+    updateEditActions();
+}
+
+void MainWindow::pasteClipboard()
+{
+    if (m_clipboard.isEmpty() || m_currentPath.isEmpty())
+        return;
+
+    QStringList errors;
+    QStringList remaining;
+    for (const QString &path : std::as_const(m_clipboard)) {
+        const QString error = m_clipboardIsCut
+            ? nfm::ops::moveInto(path, m_currentPath)
+            : nfm::ops::copyInto(path, m_currentPath);
+        if (!error.isEmpty()) {
+            errors.append(error);
+            remaining.append(path);
+        }
+    }
+
+    // A cut is one-shot: keep only the items that failed so they can be retried.
+    if (m_clipboardIsCut)
+        m_clipboard = remaining;
+    reportErrors(tr("Paste"), errors);
+    reload();
+}
+
+void MainWindow::showContextMenu(const QPoint &pos)
+{
+    const QModelIndex index = m_view->indexAt(pos);
+    if (index.isValid() && !m_view->selectionModel()->isSelected(index))
+        m_view->selectionModel()->select(index, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+    m_contextMenu->exec(m_view->viewport()->mapToGlobal(pos));
 }

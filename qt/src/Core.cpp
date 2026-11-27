@@ -61,4 +61,47 @@ ReadResult readDirectory(const QString &path, const Settings &settings)
     return result;
 }
 
+namespace ops {
+
+namespace {
+
+// Converts a C error message into a QString and releases it.
+QString takeError(char *message)
+{
+    if (!message)
+        return {};
+    const QString text = QString::fromUtf8(message);
+    nfm_string_free(message);
+    return text;
+}
+
+} // namespace
+
+QString createFolder(const QString &parent, const QString &name)
+{
+    return takeError(nfm_create_directory(parent.toUtf8().constData(), name.toUtf8().constData()));
+}
+
+QString rename(const QString &path, const QString &newName)
+{
+    return takeError(nfm_rename(path.toUtf8().constData(), newName.toUtf8().constData()));
+}
+
+QString copyInto(const QString &src, const QString &destDir)
+{
+    return takeError(nfm_copy(src.toUtf8().constData(), destDir.toUtf8().constData()));
+}
+
+QString moveInto(const QString &src, const QString &destDir)
+{
+    return takeError(nfm_move(src.toUtf8().constData(), destDir.toUtf8().constData()));
+}
+
+QString moveToTrash(const QString &path)
+{
+    return takeError(nfm_move_to_trash(path.toUtf8().constData()));
+}
+
+} // namespace ops
+
 } // namespace nfm
