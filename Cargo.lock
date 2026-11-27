@@ -454,6 +454,7 @@ name = "nexusfm-core"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -468,6 +469,7 @@ dependencies = [
 name = "nexusfm-operations"
 version = "0.1.0"
 dependencies = [
+ "nexusfm-core",
  "tempfile",
  "thiserror 2.0.21",
  "trash",

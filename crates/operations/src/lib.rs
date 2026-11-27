@@ -13,36 +13,12 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use thiserror::Error;
+use nexusfm_core::NexusError as OperationError;
 
-/// Errors from file operations. Each carries the path it concerns.
-#[derive(Debug, Error)]
-pub enum OperationError {
-    #[error("{} already exists", .0.display())]
-    AlreadyExists(PathBuf),
-    #[error("{} does not exist", .0.display())]
-    NotFound(PathBuf),
-    #[error("\"{0}\" is not a valid name")]
-    InvalidName(String),
-    #[error("cannot move or copy {} into itself", .0.display())]
-    IntoItself(PathBuf),
-    #[error("cannot move {} to the trash: {reason}", path.display())]
-    Trash { path: PathBuf, reason: String },
-    #[error("{}: {source}", path.display())]
-    Io {
-        path: PathBuf,
-        #[source]
-        source: io::Error,
-    },
-}
-
-pub type Result<T> = std::result::Result<T, OperationError>;
+pub type Result<T> = nexusfm_core::Result<T>;
 
 fn io_error(path: &Path) -> impl FnOnce(io::Error) -> OperationError + '_ {
-    move |source| OperationError::Io {
-        path: path.to_path_buf(),
-        source,
-    }
+    move |source| OperationError::io(path, source)
 }
 
 /// Checks that `name` can be used as a single file name in a directory.

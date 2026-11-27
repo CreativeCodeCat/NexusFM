@@ -9,19 +9,18 @@
 //! `list_directory` so a GIO/GVFS backend can replace it without changing callers.
 
 use std::fs;
-use std::io;
 use std::path::Path;
 
-use nexusfm_core::{Entry, EntryKind};
+use nexusfm_core::{Entry, EntryKind, NexusError, Result};
 
 /// Lists the immediate children of `dir`, unsorted.
 ///
 /// Entries that cannot be read (for example, a file removed while listing) are
 /// skipped rather than failing the whole listing.
-pub fn list_directory(dir: &Path) -> io::Result<Vec<Entry>> {
+pub fn list_directory(dir: &Path) -> Result<Vec<Entry>> {
     let mut entries = Vec::new();
 
-    for item in fs::read_dir(dir)? {
+    for item in fs::read_dir(dir).map_err(|err| NexusError::io(dir, err))? {
         let Ok(item) = item else { continue };
         let Ok(file_type) = item.file_type() else {
             continue;
