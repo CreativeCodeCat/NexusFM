@@ -11,6 +11,7 @@ crate-type = ["staticlib", "rlib"]
 nexusfm-core = { path = "../core" }
 nexusfm-config = { path = "../config" }
 nexusfm-filesystem = { path = "../filesystem" }
+nexusfm-operations = { path = "../operations" }
 
 [dev-dependencies]
 tempfile = "3"

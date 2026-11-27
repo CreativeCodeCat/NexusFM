@@ -44,4 +44,13 @@ bool loadSettings(Settings &out);
 // Lists `path` with the given settings applied (hidden files, sorting).
 ReadResult readDirectory(const QString &path, const Settings &settings);
 
+// File operations. Each returns an empty string on success, or the error message.
+namespace ops {
+QString createFolder(const QString &parent, const QString &name);
+QString rename(const QString &path, const QString &newName);
+QString copyInto(const QString &src, const QString &destDir);
+QString moveInto(const QString &src, const QString &destDir);
+QString moveToTrash(const QString &path);
+} // namespace ops
+
 } // namespace nfm

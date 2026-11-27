@@ -3,12 +3,14 @@
 #include "Core.h"
 
 #include <QMainWindow>
+#include <QStringList>
 #include <QString>
 #include <QVector>
 
 class FileModel;
 class QAction;
 class QLineEdit;
+class QMenu;
 class QListWidget;
 class QListWidgetItem;
 class QTreeView;
@@ -33,9 +35,19 @@ private slots:
     void onPlaceActivated(QListWidgetItem *item);
     void onLocationEntered();
     void onHeaderClicked(int column);
+    void newFolder();
+    void renameSelected();
+    void trashSelected();
+    void cutSelected();
+    void copySelected();
+    void pasteClipboard();
+    void showContextMenu(const QPoint &pos);
+    void updateEditActions();
 
 private:
     void setupActions();
+    QStringList selectedPaths() const;
+    void reportErrors(const QString &title, const QStringList &errors);
     void setupMenus();
     void setupToolBar();
     void setupCentral();
@@ -60,4 +72,16 @@ private:
     QAction *m_homeAction = nullptr;
     QAction *m_reloadAction = nullptr;
     QAction *m_showHiddenAction = nullptr;
+
+    QAction *m_newFolderAction = nullptr;
+    QAction *m_renameAction = nullptr;
+    QAction *m_trashAction = nullptr;
+    QAction *m_cutAction = nullptr;
+    QAction *m_copyAction = nullptr;
+    QAction *m_pasteAction = nullptr;
+    QMenu *m_contextMenu = nullptr;
+
+    // Internal clipboard for cut/copy/paste between folders.
+    QStringList m_clipboard;
+    bool m_clipboardIsCut = false;
 };
