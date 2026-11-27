@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 
 #include "FileModel.h"
+#include "TitleBar.h"
 
 #include <QAction>
 #include <QApplication>
@@ -18,13 +19,16 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMenuBar>
+#include <QMouseEvent>
 #include <QMessageBox>
 #include <QStandardPaths>
 #include <QSplitter>
 #include <QStatusBar>
 #include <QToolBar>
+#include <QVBoxLayout>
 #include <QTreeView>
 #include <QUrl>
+#include <QWindow>
 
 namespace {
 
@@ -58,9 +62,19 @@ QVector<Place> defaultPlaces()
 
 } // namespace
 
+namespace {
+
+// Width of the border, in pixels, that starts a window resize.
+constexpr int kResizeMargin = 6;
+
+} // namespace
+
 MainWindow::MainWindow(const QString &startPath, QWidget *parent)
     : QMainWindow(parent)
 {
+    setWindowFlag(Qt::FramelessWindowHint, true);
+    setMouseTracking(true);
+    qApp->installEventFilter(this); // catches the edge-resize mouse events of child widgets
     if (!nfm::loadSettings(m_settings))
         QMessageBox::warning(this, tr("Configuration"),
                              tr("The configuration file could not be read. Default settings are in use."));
@@ -70,6 +84,7 @@ MainWindow::MainWindow(const QString &startPath, QWidget *parent)
 
     setupActions();
     setupMenus();
+    m_titleBar = new TitleBar(menuBar(), this);
     setupToolBar();
     setupCentral();
     setupStatusBar();
@@ -181,12 +196,14 @@ void MainWindow::setupMenus()
 
 void MainWindow::setupToolBar()
 {
-    auto *toolBar = addToolBar(tr("Navigation"));
+    // Placed in the central column (not addToolBar) so it sits below the title bar.
+    auto *toolBar = new QToolBar(tr("Navigation"), this);
     toolBar->setObjectName(QStringLiteral("navigationToolBar"));
     toolBar->setMovable(false);
     toolBar->addAction(m_backAction);
     toolBar->addAction(m_forwardAction);
     toolBar->addAction(m_upAction);
+    m_toolBar = toolBar;
 
     m_location = new QLineEdit(this);
     m_location->setPlaceholderText(tr("Location"));
@@ -244,7 +261,15 @@ void MainWindow::setupCentral()
     splitter->setStretchFactor(1, 1);
     splitter->setCollapsible(0, true);
     splitter->setSizes({200, 760});
-    setCentralWidget(splitter);
+
+    auto *column = new QWidget(this);
+    auto *layout = new QVBoxLayout(column);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+    layout->addWidget(m_titleBar);
+    layout->addWidget(m_toolBar);
+    layout->addWidget(splitter, 1);
+    setCentralWidget(column);
 
     updateSortIndicator();
 }
@@ -537,4 +562,82 @@ void MainWindow::showContextMenu(const QPoint &pos)
     if (index.isValid() && !m_view->selectionModel()->isSelected(index))
         m_view->selectionModel()->select(index, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
     m_contextMenu->exec(m_view->viewport()->mapToGlobal(pos));
+}
+
+MainWindow::~MainWindow()
+{
+    qApp->removeEventFilter(this);
+}
+
+void MainWindow::changeEvent(QEvent *event)
+{
+    if (event->type() == QEvent::WindowStateChange && m_titleBar)
+        m_titleBar->updateMaximizeIcon(isMaximized());
+    QMainWindow::changeEvent(event);
+}
+
+bool MainWindow::eventFilter(QObject *watched, QEvent *event)
+{
+    const auto *widget = qobject_cast<QWidget *>(watched);
+    if (!widget || widget->window() != this || isMaximized() || isFullScreen())
+        return QMainWindow::eventFilter(watched, event);
+
+    if (event->type() == QEvent::MouseMove) {
+        const auto *mouse = static_cast<QMouseEvent *>(event);
+        setResizeCursor(resizeEdgesAt(mouse->globalPosition().toPoint()));
+    } else if (event->type() == QEvent::MouseButtonPress) {
+        const auto *mouse = static_cast<QMouseEvent *>(event);
+        const Qt::Edges edges = resizeEdgesAt(mouse->globalPosition().toPoint());
+        if (mouse->button() == Qt::LeftButton && edges != Qt::Edges{}) {
+            if (QWindow *handle = windowHandle())
+                handle->startSystemResize(edges);
+            return true;
+        }
+    }
+    return QMainWindow::eventFilter(watched, event);
+}
+
+Qt::Edges MainWindow::resizeEdgesAt(const QPoint &globalPos) const
+{
+    const QPoint local = mapFromGlobal(globalPos);
+    if (!rect().contains(local))
+        return {};
+
+    Qt::Edges edges;
+    if (local.x() < kResizeMargin)
+        edges |= Qt::LeftEdge;
+    else if (local.x() >= width() - kResizeMargin)
+        edges |= Qt::RightEdge;
+    if (local.y() < kResizeMargin)
+        edges |= Qt::TopEdge;
+    else if (local.y() >= height() - kResizeMargin)
+        edges |= Qt::BottomEdge;
+    return edges;
+}
+
+void MainWindow::setResizeCursor(Qt::Edges edges)
+{
+    Qt::CursorShape shape = Qt::ArrowCursor;
+    const bool horizontal = edges.testFlag(Qt::LeftEdge) || edges.testFlag(Qt::RightEdge);
+    const bool vertical = edges.testFlag(Qt::TopEdge) || edges.testFlag(Qt::BottomEdge);
+    if (horizontal && vertical) {
+        const bool diagonalDown = edges.testFlag(Qt::LeftEdge) == edges.testFlag(Qt::TopEdge);
+        shape = diagonalDown ? Qt::SizeFDiagCursor : Qt::SizeBDiagCursor;
+    } else if (horizontal) {
+        shape = Qt::SizeHorCursor;
+    } else if (vertical) {
+        shape = Qt::SizeVerCursor;
+    }
+
+    if (shape == Qt::ArrowCursor) {
+        if (m_resizeCursorActive) {
+            QApplication::restoreOverrideCursor();
+            m_resizeCursorActive = false;
+        }
+    } else if (!m_resizeCursorActive) {
+        QApplication::setOverrideCursor(shape);
+        m_resizeCursorActive = true;
+    } else {
+        QApplication::changeOverrideCursor(shape);
+    }
 }

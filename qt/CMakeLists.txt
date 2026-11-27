@@ -42,6 +42,8 @@ add_executable(nexusfm-qt
     src/FileModel.cpp
     src/MainWindow.h
     src/MainWindow.cpp
+    src/TitleBar.h
+    src/TitleBar.cpp
     src/nexusfm_ffi.h)
 add_dependencies(nexusfm-qt nexusfm_rust_core)
 
