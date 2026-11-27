@@ -373,7 +373,8 @@ pub fn places_json(places: &[Place]) -> String {
 ///
 /// Keys: `name`, `path`, `kind`, `size`, `modified`, `accessed`, `created`
 /// (seconds since the Unix epoch, or `null`), `permissions` (as `rwxr-x---`),
-/// `owner`, `group`, and `linkTarget` (or `null`).
+/// `owner`, `group`, `linkTarget` (or `null`), `mimeType`, and
+/// `defaultApplication` (or `null`).
 pub fn inspect(path: &Path) -> Result<String, String> {
     let props = read_properties(path).map_err(|err| err.to_string())?;
     Ok(properties_json(&props))
@@ -397,6 +398,8 @@ pub fn properties_json(props: &FileProperties) -> String {
         "owner": props.owner,
         "group": props.group,
         "linkTarget": props.link_target.as_ref().map(|target| target.to_string_lossy().into_owned()),
+        "mimeType": props.mime_type,
+        "defaultApplication": props.default_application,
     })
     .to_string()
 }

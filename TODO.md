@@ -15,15 +15,15 @@ Items are grouped by subsystem and roughly ordered by implementation dependencie
 - [x] Configuration loading from TOML using XDG config directories
 - [x] Logging and diagnostics using `tracing`
 - [ ] Replace `std::fs` backend with GIO/GVFS
-- [ ] Preserve `list_directory` as the filesystem abstraction boundary
+- [x] Preserve `list_directory` as the filesystem abstraction boundary
 - [ ] Filesystem metadata abstraction
-- [ ] MIME type detection
-- [ ] Default application lookup
+- [x] MIME type detection
+- [x] Default application lookup
 - [ ] File monitoring and automatic directory refresh
 - [ ] Filesystem change notifications
-- [ ] Symlink handling
-- [ ] Hidden file handling
-- [ ] Permissions and ownership metadata
+- [x] Symlink handling
+- [x] Hidden file handling
+- [x] Permissions and ownership metadata
 - [ ] URI-based location abstraction
 - [ ] Support local, remote and virtual filesystem locations
 

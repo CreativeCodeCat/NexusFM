@@ -13,7 +13,9 @@ use std::path::Path;
 
 use nexusfm_core::{Entry, EntryKind, NexusError, Result};
 
+mod applications;
 mod properties;
+pub use applications::{default_application, default_in};
 pub use properties::{FileProperties, permission_string, read_properties};
 
 /// Lists the immediate children of `dir`, unsorted.
