@@ -286,7 +286,11 @@ impl qobject::Backend {
         match result {
             Ok(listing) => {
                 // Watch the folder now on screen so outside changes appear.
-                let watcher = nexusfm_filesystem::DirectoryWatcher::new(&listing.path).ok();
+                let watcher = if nexusfm_filesystem::is_uri(&listing.path) {
+                    None
+                } else {
+                    nexusfm_filesystem::DirectoryWatcher::new(&listing.path).ok()
+                };
                 self.as_mut().rust_mut().get_mut().watcher = watcher;
                 let count = listing.entries.len();
                 let path = listing.path.to_string_lossy().into_owned();

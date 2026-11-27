@@ -9,7 +9,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use nexusfm_core::{EntryKind, Result};
+use nexusfm_core::{EntryKind, NexusError, Result};
 
 use crate::metadata::read_metadata;
 
@@ -46,6 +46,12 @@ impl FileProperties {
 /// Reads the Properties details for `path`. A symbolic link is described
 /// itself, not the file it points to.
 pub fn read_properties(path: &Path) -> Result<FileProperties> {
+    if crate::is_uri(path) {
+        return Err(NexusError::Message(format!(
+            "Properties for {} are not supported yet",
+            path.display()
+        )));
+    }
     let meta = read_metadata(path)?;
     let kind = meta.kind;
     let link_target = meta.link_target.clone();

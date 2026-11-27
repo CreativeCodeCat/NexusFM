@@ -59,6 +59,11 @@ impl Location {
     }
 }
 
+/// Whether `text` is a URI (it starts with a scheme such as `smb://`), rather than a local path.
+pub fn is_uri(text: &str) -> bool {
+    has_scheme(text)
+}
+
 /// Whether `text` starts with a URI scheme such as `smb:` (letters, digits, `+`, `-`, `.`, then `://`).
 fn has_scheme(text: &str) -> bool {
     match text.split_once("://") {
