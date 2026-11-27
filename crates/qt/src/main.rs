@@ -8,11 +8,15 @@
 
 mod backend;
 
-use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QUrl};
+use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QString, QUrl};
 
 fn main() {
     let mut app = QGuiApplication::new();
     let mut engine = QQmlApplicationEngine::new();
+
+    // Wayland takes the window and taskbar icon from the desktop entry named
+    // after this ID (packaging/nexusfm.desktop).
+    QGuiApplication::set_desktop_file_name(&QString::from("nexusfm"));
 
     if let Some(engine) = engine.as_mut() {
         engine.load(&QUrl::from("qrc:/qt/qml/NexusFM/qml/Main.qml"));

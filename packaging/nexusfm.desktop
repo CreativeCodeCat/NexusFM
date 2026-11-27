@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=NexusFM
+Comment=A lightweight file manager
+Exec=nexusfm-qt %U
+Icon=nexusfm
+Terminal=false
+Categories=Utility;System;FileTools;FileManager;
+StartupWMClass=nexusfm

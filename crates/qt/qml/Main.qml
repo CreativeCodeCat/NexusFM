@@ -242,6 +242,16 @@ ApplicationWindow {
             anchors.fill: parent
             spacing: 0
 
+            Image {
+                Layout.alignment: Qt.AlignVCenter
+                Layout.leftMargin: 6
+                source: "qrc:/qt/qml/NexusFM/icon.png"
+                sourceSize: Qt.size(20, 20)
+                width: 20
+                height: 20
+                smooth: true
+            }
+
             MenuBar {
                 Layout.alignment: Qt.AlignVCenter
                 Menu {
