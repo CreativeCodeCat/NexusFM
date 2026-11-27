@@ -19,8 +19,8 @@ Items are grouped by subsystem and roughly ordered by implementation dependencie
 - [ ] Filesystem metadata abstraction
 - [x] MIME type detection
 - [x] Default application lookup
-- [ ] File monitoring and automatic directory refresh
-- [ ] Filesystem change notifications
+- [x] File monitoring and automatic directory refresh
+- [x] Filesystem change notifications
 - [x] Symlink handling
 - [x] Hidden file handling
 - [x] Permissions and ownership metadata
@@ -536,7 +536,7 @@ Items are grouped by subsystem and roughly ordered by implementation dependencie
 - [ ] Cache MIME type information
 - [ ] Efficient large-directory handling
 - [ ] Virtualised file views where appropriate
-- [ ] Background filesystem monitoring
+- [x] Background filesystem monitoring
 - [ ] Memory usage optimisation
 - [ ] Startup time optimisation
 - [ ] Graceful handling of disconnected devices

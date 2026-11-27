@@ -15,8 +15,10 @@ use nexusfm_core::{Entry, EntryKind, NexusError, Result};
 
 mod applications;
 mod properties;
+mod watch;
 pub use applications::{default_application, default_in};
 pub use properties::{FileProperties, permission_string, read_properties};
+pub use watch::DirectoryWatcher;
 
 /// Lists the immediate children of `dir`, unsorted.
 ///

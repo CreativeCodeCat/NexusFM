@@ -100,6 +100,11 @@ pub mod qobject {
         #[cxx_name = "moveBookmark"]
         fn move_bookmark(self: Pin<&mut Backend>, index: i32, delta: i32);
 
+        /// Reloads the folder if it changed on disk since the last check.
+        #[qinvokable]
+        #[cxx_name = "checkForChanges"]
+        fn check_for_changes(self: Pin<&mut Backend>);
+
         #[qinvokable]
         #[cxx_name = "toggleHiddenFiles"]
         fn toggle_hidden_files(self: Pin<&mut Backend>);
@@ -152,6 +157,7 @@ pub struct BackendRust {
     view_mode: i32,
     properties_json: QString,
     session: Session,
+    watcher: Option<nexusfm_filesystem::DirectoryWatcher>,
 }
 
 impl Default for BackendRust {
@@ -179,6 +185,7 @@ impl Default for BackendRust {
             view_mode: view_mode_to_i32(session.view_mode()),
             properties_json: QString::from("{}"),
             session,
+            watcher: None,
         }
     }
 }
@@ -273,6 +280,9 @@ impl qobject::Backend {
     fn show_listing(mut self: Pin<&mut Self>, result: Result<Listing, String>) {
         match result {
             Ok(listing) => {
+                // Watch the folder now on screen so outside changes appear.
+                let watcher = nexusfm_filesystem::DirectoryWatcher::new(&listing.path).ok();
+                self.as_mut().rust_mut().get_mut().watcher = watcher;
                 let count = listing.entries.len();
                 let path = listing.path.to_string_lossy().into_owned();
                 self.as_mut().set_current_path(to_qstring(&path));
@@ -440,6 +450,19 @@ impl qobject::Backend {
         match nexusfm_session::inspect(&path) {
             Ok(json) => self.as_mut().set_properties_json(to_qstring(&json)),
             Err(message) => self.as_mut().set_error_text(to_qstring(&message)),
+        }
+    }
+
+    pub fn check_for_changes(mut self: Pin<&mut Self>) {
+        let changed = self
+            .as_mut()
+            .rust_mut()
+            .get_mut()
+            .watcher
+            .as_ref()
+            .is_some_and(|watcher| watcher.take_changes());
+        if changed {
+            self.refresh();
         }
     }
 
