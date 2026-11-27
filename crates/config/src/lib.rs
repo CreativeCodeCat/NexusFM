@@ -38,6 +38,19 @@ pub enum ConfigError {
     },
 }
 
+/// How a folder's entries are laid out.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ViewMode {
+    /// One row per entry, with name, size, type and modified columns.
+    #[default]
+    Detailed,
+    /// Names in columns, filling down then across.
+    Compact,
+    /// Large icons with names underneath, in a grid.
+    Icon,
+}
+
 /// Settings that apply across all windows.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -46,6 +59,8 @@ pub struct Config {
     pub show_hidden: bool,
     /// Sort order used when a directory has no saved preference.
     pub sort: SortOrder,
+    /// Layout used for file views.
+    pub view: ViewMode,
 }
 
 impl Config {
@@ -109,6 +124,17 @@ mod tests {
     fn ignores_unknown_keys() {
         let config = Config::parse("future_setting = 3\n", &origin()).unwrap();
         assert_eq!(config, Config::default());
+    }
+
+    #[test]
+    fn reads_view_mode() {
+        let config = Config::parse("view = \"icon\"\n", &origin()).unwrap();
+        assert_eq!(config.view, ViewMode::Icon);
+        assert_eq!(
+            Config::parse("", &origin()).unwrap().view,
+            ViewMode::Detailed
+        );
+        assert!(Config::parse("view = \"tiles\"\n", &origin()).is_err());
     }
 
     #[test]

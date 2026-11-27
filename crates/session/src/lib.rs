@@ -13,7 +13,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-use nexusfm_config::Config;
+use nexusfm_config::{Config, ViewMode};
 use nexusfm_core::{Entry, EntryKind, SortKey, SortOrder, sort_entries};
 use nexusfm_filesystem::list_directory;
 use nexusfm_operations as ops;
@@ -68,6 +68,14 @@ impl Session {
 
     pub fn show_hidden(&self) -> bool {
         self.config.show_hidden
+    }
+
+    pub fn view_mode(&self) -> ViewMode {
+        self.config.view
+    }
+
+    pub fn set_view_mode(&mut self, mode: ViewMode) {
+        self.config.view = mode;
     }
 
     pub fn sort_order(&self) -> SortOrder {
@@ -546,6 +554,15 @@ mod tests {
         let parsed = parse_user_dirs(text, home);
         assert!(parsed.contains(&("XDG_DESKTOP_DIR".into(), PathBuf::from("/home/u/Desk"))));
         assert!(parsed.contains(&("XDG_MUSIC_DIR".into(), PathBuf::from("/data/music"))));
+    }
+
+    #[test]
+    fn view_mode_can_be_changed() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = session(dir.path());
+        assert_eq!(s.view_mode(), ViewMode::Detailed);
+        s.set_view_mode(ViewMode::Compact);
+        assert_eq!(s.view_mode(), ViewMode::Compact);
     }
 
     #[test]

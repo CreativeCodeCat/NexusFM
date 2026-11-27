@@ -95,6 +95,17 @@ ApplicationWindow {
         selected = rows;
     }
 
+    function rowColor(row) {
+        if (selected.indexOf(row) >= 0)
+            return window.palette.highlight;
+        return row % 2 === 0 ? "transparent"
+                             : Qt.rgba(window.palette.text.r, window.palette.text.g, window.palette.text.b, 0.05);
+    }
+
+    function textColor(row) {
+        return selected.indexOf(row) >= 0 ? window.palette.highlightedText : window.palette.text;
+    }
+
     function formatSize(bytes) {
         if (bytes < 1024) return bytes + (bytes === 1 ? " byte" : " bytes");
         const units = ["KiB", "MiB", "GiB", "TiB"];
@@ -219,6 +230,34 @@ ApplicationWindow {
         shortcut: "Alt+Home"
         onTriggered: backend.navigate(backend.homePath)
     }
+    ActionGroup {
+        id: viewGroup
+        exclusive: true
+    }
+    Action {
+        id: detailedAction
+        text: qsTr("Detailed List")
+        checkable: true
+        checked: backend.viewMode === 0
+        ActionGroup.group: viewGroup
+        onTriggered: backend.chooseViewMode(0)
+    }
+    Action {
+        id: compactAction
+        text: qsTr("Compact")
+        checkable: true
+        checked: backend.viewMode === 1
+        ActionGroup.group: viewGroup
+        onTriggered: backend.chooseViewMode(1)
+    }
+    Action {
+        id: iconAction
+        text: qsTr("Icons")
+        checkable: true
+        checked: backend.viewMode === 2
+        ActionGroup.group: viewGroup
+        onTriggered: backend.chooseViewMode(2)
+    }
     Action {
         id: quitAction
         text: qsTr("Quit")
@@ -271,6 +310,10 @@ ApplicationWindow {
                 }
                 Menu {
                     title: qsTr("&View")
+                    MenuItem { action: detailedAction }
+                    MenuItem { action: compactAction }
+                    MenuItem { action: iconAction }
+                    MenuSeparator {}
                     MenuItem { action: hiddenAction }
                     MenuSeparator {}
                     MenuItem { action: reloadAction }
@@ -387,7 +430,8 @@ ApplicationWindow {
                 Row {
                     id: headerRow
                     Layout.fillWidth: true
-                    height: 26
+                    visible: backend.viewMode === 0
+                    height: visible ? 26 : 0
 
                     Repeater {
                         model: [
@@ -424,89 +468,173 @@ ApplicationWindow {
                     }
                 }
 
-                ListView {
-                    id: fileView
+                // The three layouts share one model and one selection.
+                Item {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    clip: true
-                    model: window.entries
-                    focus: true
-                    keyNavigationEnabled: true
-                    ScrollBar.vertical: ScrollBar {}
-
-                    delegate: Rectangle {
-                        required property var modelData
-                        required property int index
-
-                        width: fileView.width
-                        height: 26
-                        color: window.selected.indexOf(index) >= 0
-                               ? window.palette.highlight
-                               : (index % 2 === 0 ? "transparent" : Qt.rgba(window.palette.text.r, window.palette.text.g, window.palette.text.b, 0.05))
-
-                        RowLayout {
-                            anchors.fill: parent
-                            spacing: 0
-
-                            Label {
-                                Layout.fillWidth: true
-                                Layout.leftMargin: 6
-                                text: modelData.name
-                                elide: Text.ElideRight
-                                font.bold: modelData.kind === "directory"
-                                color: window.selected.indexOf(index) >= 0 ? window.palette.highlightedText : window.palette.text
-                            }
-                            Label {
-                                Layout.preferredWidth: window.columnWidths.size
-                                horizontalAlignment: Text.AlignRight
-                                rightPadding: 8
-                                text: modelData.kind === "directory" ? "" : window.formatSize(modelData.size)
-                                color: window.selected.indexOf(index) >= 0 ? window.palette.highlightedText : window.palette.text
-                            }
-                            Label {
-                                Layout.preferredWidth: window.columnWidths.type
-                                leftPadding: 6
-                                text: window.typeName(modelData.kind)
-                                color: window.selected.indexOf(index) >= 0 ? window.palette.highlightedText : window.palette.text
-                            }
-                            Label {
-                                Layout.preferredWidth: window.columnWidths.modified
-                                leftPadding: 6
-                                text: window.formatDate(modelData.modified)
-                                color: window.selected.indexOf(index) >= 0 ? window.palette.highlightedText : window.palette.text
-                            }
-                        }
-
-                        MouseArea {
-                            anchors.fill: parent
-                            acceptedButtons: Qt.LeftButton | Qt.RightButton
-                            onClicked: function (mouse) {
-                                if (mouse.button === Qt.RightButton) {
-                                    if (window.selected.indexOf(index) < 0)
-                                        window.selectOnly(index);
-                                    contextMenu.popup();
-                                } else if (mouse.modifiers & Qt.ControlModifier) {
-                                    window.toggleRow(index);
-                                } else if (mouse.modifiers & Qt.ShiftModifier) {
-                                    window.selectRange(index);
-                                } else {
-                                    window.selectOnly(index);
-                                }
-                            }
-                            onDoubleClicked: window.openEntry(modelData)
-                        }
-                    }
 
                     MouseArea {
                         // Clicking empty space clears the selection.
                         anchors.fill: parent
-                        z: -1
                         acceptedButtons: Qt.LeftButton | Qt.RightButton
                         onClicked: function (mouse) {
                             if (mouse.button === Qt.RightButton)
                                 contextMenu.popup();
                             else
                                 window.selected = [];
+                        }
+                    }
+
+                    ListView {
+                        id: fileView
+                        anchors.fill: parent
+                        visible: backend.viewMode === 0
+                        clip: true
+                        model: window.entries
+                        focus: true
+                        keyNavigationEnabled: true
+                        ScrollBar.vertical: ScrollBar {}
+
+                        delegate: Rectangle {
+                            required property var modelData
+                            required property int index
+
+                            width: fileView.width
+                            height: 26
+                            color: window.rowColor(index)
+
+                            RowLayout {
+                                anchors.fill: parent
+                                spacing: 0
+
+                                Label {
+                                    Layout.fillWidth: true
+                                    Layout.leftMargin: 6
+                                    text: modelData.name
+                                    elide: Text.ElideRight
+                                    font.bold: modelData.kind === "directory"
+                                    color: window.textColor(index)
+                                }
+                                Label {
+                                    Layout.preferredWidth: window.columnWidths.size
+                                    horizontalAlignment: Text.AlignRight
+                                    rightPadding: 8
+                                    text: modelData.kind === "directory" ? "" : window.formatSize(modelData.size)
+                                    color: window.textColor(index)
+                                }
+                                Label {
+                                    Layout.preferredWidth: window.columnWidths.type
+                                    leftPadding: 6
+                                    text: window.typeName(modelData.kind)
+                                    color: window.textColor(index)
+                                }
+                                Label {
+                                    Layout.preferredWidth: window.columnWidths.modified
+                                    leftPadding: 6
+                                    text: window.formatDate(modelData.modified)
+                                    color: window.textColor(index)
+                                }
+                            }
+
+                            ItemClick {
+                                anchors.fill: parent
+                                modelData: parent.modelData
+                                index: parent.index
+                            }
+                        }
+                    }
+
+                    GridView {
+                        // Compact: names only, filling each column top to bottom.
+                        id: compactView
+                        anchors.fill: parent
+                        visible: backend.viewMode === 1
+                        clip: true
+                        cellWidth: 240
+                        cellHeight: 26
+                        flow: GridView.FlowTopToBottom
+                        model: window.entries
+                        ScrollBar.horizontal: ScrollBar {}
+
+                        delegate: Rectangle {
+                            required property var modelData
+                            required property int index
+
+                            width: compactView.cellWidth
+                            height: compactView.cellHeight
+                            color: window.rowColor(index)
+
+                            Label {
+                                anchors.fill: parent
+                                leftPadding: 6
+                                rightPadding: 6
+                                verticalAlignment: Text.AlignVCenter
+                                text: modelData.name
+                                elide: Text.ElideRight
+                                font.bold: modelData.kind === "directory"
+                                color: window.textColor(index)
+                            }
+
+                            ItemClick {
+                                anchors.fill: parent
+                                modelData: parent.modelData
+                                index: parent.index
+                            }
+                        }
+                    }
+
+                    GridView {
+                        // Icons: a placeholder tile per entry, with the name beneath.
+                        id: iconView
+                        anchors.fill: parent
+                        visible: backend.viewMode === 2
+                        clip: true
+                        cellWidth: 120
+                        cellHeight: 104
+                        model: window.entries
+                        ScrollBar.vertical: ScrollBar {}
+
+                        delegate: Rectangle {
+                            required property var modelData
+                            required property int index
+
+                            width: iconView.cellWidth
+                            height: iconView.cellHeight
+                            radius: 4
+                            color: window.rowColor(index)
+
+                            Column {
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                anchors.top: parent.top
+                                anchors.topMargin: 8
+                                width: parent.width - 12
+                                spacing: 6
+
+                                Rectangle {
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    width: 48
+                                    height: 40
+                                    radius: 4
+                                    color: modelData.kind === "directory"
+                                           ? Qt.rgba(0.35, 0.6, 0.9, 1)
+                                           : window.palette.mid
+                                }
+                                Label {
+                                    width: parent.width
+                                    horizontalAlignment: Text.AlignHCenter
+                                    wrapMode: Text.Wrap
+                                    maximumLineCount: 2
+                                    elide: Text.ElideRight
+                                    text: modelData.name
+                                    color: window.textColor(index)
+                                }
+                            }
+
+                            ItemClick {
+                                anchors.fill: parent
+                                modelData: parent.modelData
+                                index: parent.index
+                            }
                         }
                     }
                 }
@@ -540,6 +668,29 @@ ApplicationWindow {
 
 
     // ---- Edge handles for resizing the frameless window -------------------
+
+    // Click handling shared by all file layouts: select, extend the selection,
+    // open on double-click, or show the context menu on right-click.
+    component ItemClick: MouseArea {
+        required property var modelData
+        required property int index
+
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
+        onClicked: function (mouse) {
+            if (mouse.button === Qt.RightButton) {
+                if (window.selected.indexOf(index) < 0)
+                    window.selectOnly(index);
+                contextMenu.popup();
+            } else if (mouse.modifiers & Qt.ControlModifier) {
+                window.toggleRow(index);
+            } else if (mouse.modifiers & Qt.ShiftModifier) {
+                window.selectRange(index);
+            } else {
+                window.selectOnly(index);
+            }
+        }
+        onDoubleClicked: window.openEntry(modelData)
+    }
 
     component EdgeHandle: MouseArea {
         required property int edges
