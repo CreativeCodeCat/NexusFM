@@ -1,18 +1,16 @@
 [package]
-name = "nexusfm-ffi"
-description = "C ABI over the NexusFM core, used by the Qt Widgets frontend"
+name = "nexusfm-session"
+description = "UI-independent application state for NexusFM: history, clipboard, sorting, places"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-
-[lib]
-crate-type = ["staticlib", "rlib"]
 
 [dependencies]
 nexusfm-core = { path = "../core" }
 nexusfm-config = { path = "../config" }
 nexusfm-filesystem = { path = "../filesystem" }
 nexusfm-operations = { path = "../operations" }
+serde_json = "1"
 
 [dev-dependencies]
 tempfile = "3"

@@ -27,12 +27,12 @@ Items are grouped by subsystem and roughly ordered by implementation dependencie
 - [ ] URI-based location abstraction
 - [ ] Support local, remote and virtual filesystem locations
 
-## 2. Qt 6 Widgets Frontend
+## 2. Qt Quick (QML) Frontend
 
 ### Main Window
 
-- [ ] `qt-bridge` crate using `cxx-qt`
-- [x] CMake project under `qt/` that builds and links the Rust core
+- [x] `nexusfm-qt` crate using `cxx-qt`
+- [x] Qt build integrated with Cargo (no CMake)
 - [x] Main application window
 - [x] Startup directory from CLI argument or `$HOME`
 - [ ] Traditional menu bar (File, Edit, View, Go, Bookmarks, Help)
@@ -610,7 +610,7 @@ Items are grouped by subsystem and roughly ordered by implementation dependencie
 
 - [ ] Rust core and filesystem abstraction
 - [ ] GIO/GVFS integration
-- [x] Qt 6 Widgets frontend
+- [x] Qt 6 Quick (QML) frontend
 - [x] Main window and navigation toolbar
 - [ ] Sidebar and Places
 - [ ] Icon, detailed and compact views

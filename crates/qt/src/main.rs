@@ -3,24 +3,22 @@
 // This file is part of NexusFM, licensed under the GNU General Public License
 // version 3. See the LICENSE file for details.
 
-//! Starts the Qt window built by `build.rs`. Arguments are passed through to it.
+//! NexusFM: starts the Qt Quick window. The interface is in `qml/`, and the
+//! state and file operations are in the Rust backend (`backend.rs`).
 
-use std::process::{Command, ExitCode};
+mod backend;
 
-fn main() -> ExitCode {
-    let status = match Command::new(env!("NFM_QT_BIN"))
-        .args(std::env::args_os().skip(1))
-        .status()
-    {
-        Ok(status) => status,
-        Err(err) => {
-            eprintln!("nexusfm-qt: cannot start the Qt window: {err}");
-            return ExitCode::FAILURE;
-        }
-    };
+use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QUrl};
 
-    match status.code() {
-        Some(code) => ExitCode::from(u8::try_from(code).unwrap_or(1)),
-        None => ExitCode::FAILURE,
+fn main() {
+    let mut app = QGuiApplication::new();
+    let mut engine = QQmlApplicationEngine::new();
+
+    if let Some(engine) = engine.as_mut() {
+        engine.load(&QUrl::from("qrc:/qt/qml/NexusFM/qml/Main.qml"));
+    }
+
+    if let Some(app) = app.as_mut() {
+        app.exec();
     }
 }

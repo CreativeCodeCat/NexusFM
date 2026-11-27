@@ -1,0 +1,569 @@
+// Copyright (C) 2026 NexusFM
+//
+// This file is part of NexusFM, licensed under the GNU General Public License
+// version 3. See the LICENSE file for details.
+
+//! Application state for the NexusFM window, with no GUI dependency.
+//!
+//! [`Session`] tracks the current folder and its history, sorting and hidden-file
+//! settings, and the cut/copy clipboard. The Qt front end calls into it and shows
+//! the results. Everything here can be tested without a display.
+
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::time::UNIX_EPOCH;
+
+use nexusfm_config::Config;
+use nexusfm_core::{Entry, EntryKind, SortKey, SortOrder, sort_entries};
+use nexusfm_filesystem::list_directory;
+use nexusfm_operations as ops;
+
+/// A folder's contents, filtered and sorted according to the session settings.
+#[derive(Debug, Clone)]
+pub struct Listing {
+    pub path: PathBuf,
+    pub entries: Vec<Entry>,
+}
+
+/// A sidebar entry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Place {
+    pub label: String,
+    pub path: PathBuf,
+}
+
+/// The state of one NexusFM window.
+#[derive(Debug, Clone)]
+pub struct Session {
+    home: PathBuf,
+    config: Config,
+    current: Option<PathBuf>,
+    back: Vec<PathBuf>,
+    forward: Vec<PathBuf>,
+    clipboard: Vec<PathBuf>,
+    clipboard_is_cut: bool,
+}
+
+impl Session {
+    /// Starts a session with `config`. `home` is the user's home folder.
+    pub fn new(config: Config, home: PathBuf) -> Self {
+        Self {
+            home,
+            config,
+            current: None,
+            back: Vec::new(),
+            forward: Vec::new(),
+            clipboard: Vec::new(),
+            clipboard_is_cut: false,
+        }
+    }
+
+    pub fn home(&self) -> &Path {
+        &self.home
+    }
+
+    pub fn current(&self) -> Option<&Path> {
+        self.current.as_deref()
+    }
+
+    pub fn show_hidden(&self) -> bool {
+        self.config.show_hidden
+    }
+
+    pub fn sort_order(&self) -> SortOrder {
+        self.config.sort
+    }
+
+    pub fn can_go_back(&self) -> bool {
+        !self.back.is_empty()
+    }
+
+    pub fn can_go_forward(&self) -> bool {
+        !self.forward.is_empty()
+    }
+
+    pub fn can_paste(&self) -> bool {
+        !self.clipboard.is_empty()
+    }
+
+    /// Opens `path`, recording the previous folder in the back history.
+    /// On failure the session stays where it was.
+    pub fn navigate(&mut self, path: &Path) -> Result<Listing, String> {
+        let target = clean(path);
+        let listing = self.list(&target)?;
+        let previous = self.current.take();
+        if previous
+            .as_ref()
+            .is_some_and(|previous| *previous != target)
+        {
+            self.back.extend(previous);
+            self.forward.clear();
+        }
+        self.current = Some(target);
+        Ok(listing)
+    }
+
+    /// Returns to the previous folder.
+    pub fn go_back(&mut self) -> Result<Listing, String> {
+        let Some(previous) = self.back.last().cloned() else {
+            return Err("There is no earlier folder".into());
+        };
+        let listing = self.list(&previous)?;
+        self.back.pop();
+        if let Some(current) = self.current.take() {
+            self.forward.push(current);
+        }
+        self.current = Some(previous);
+        Ok(listing)
+    }
+
+    /// Returns to the folder that was left by the last back step.
+    pub fn go_forward(&mut self) -> Result<Listing, String> {
+        let Some(next) = self.forward.last().cloned() else {
+            return Err("There is no later folder".into());
+        };
+        let listing = self.list(&next)?;
+        self.forward.pop();
+        if let Some(current) = self.current.take() {
+            self.back.push(current);
+        }
+        self.current = Some(next);
+        Ok(listing)
+    }
+
+    /// Opens the parent of the current folder.
+    pub fn go_up(&mut self) -> Result<Listing, String> {
+        let Some(parent) = self
+            .current
+            .as_deref()
+            .and_then(Path::parent)
+            .map(Path::to_path_buf)
+        else {
+            return Err("This folder has no parent".into());
+        };
+        self.navigate(&parent)
+    }
+
+    /// Reads the current folder again, e.g. after a change on disk.
+    pub fn reload(&mut self) -> Result<Listing, String> {
+        let path = self.current.clone().ok_or("No folder is open")?;
+        self.list(&path)
+    }
+
+    /// Sorts by `key`. Choosing the key that is already active reverses the order.
+    pub fn sort_by(&mut self, key: SortKey) {
+        if self.config.sort.key == key {
+            self.config.sort.descending = !self.config.sort.descending;
+        } else {
+            self.config.sort = SortOrder {
+                key,
+                descending: false,
+            };
+        }
+    }
+
+    pub fn toggle_hidden(&mut self) {
+        self.config.show_hidden = !self.config.show_hidden;
+    }
+
+    /// Lists `path` with the current hidden-file and sort settings.
+    pub fn list(&self, path: &Path) -> Result<Listing, String> {
+        let mut entries =
+            list_directory(path).map_err(|err| format!("Cannot read {}: {err}", path.display()))?;
+        if !self.config.show_hidden {
+            entries.retain(|entry| !entry.name.starts_with('.'));
+        }
+        sort_entries(&mut entries, self.config.sort);
+        Ok(Listing {
+            path: path.to_path_buf(),
+            entries,
+        })
+    }
+
+    /// Creates a folder in the current folder.
+    pub fn create_folder(&self, name: &str) -> Result<(), String> {
+        let parent = self.require_current()?;
+        ops::create_directory(parent, name)
+            .map(|_| ())
+            .map_err(|err| err.to_string())
+    }
+
+    /// Renames `path` within its folder.
+    pub fn rename(&self, path: &Path, new_name: &str) -> Result<(), String> {
+        ops::rename(path, new_name)
+            .map(|_| ())
+            .map_err(|err| err.to_string())
+    }
+
+    /// Moves each path to the trash. Returns one message per failure.
+    pub fn trash(&self, paths: &[PathBuf]) -> Vec<String> {
+        paths
+            .iter()
+            .filter_map(|path| ops::move_to_trash(path).err().map(|err| err.to_string()))
+            .collect()
+    }
+
+    /// Puts `paths` on the clipboard for a later paste. A cut replaces a copy and
+    /// vice versa.
+    pub fn set_clipboard(&mut self, paths: Vec<PathBuf>, cut: bool) {
+        self.clipboard = paths;
+        self.clipboard_is_cut = cut;
+    }
+
+    /// Pastes the clipboard into the current folder. A copy keeps the clipboard.
+    /// A cut keeps only the items that failed, so they can be retried.
+    /// Returns one message per failure.
+    pub fn paste(&mut self) -> Vec<String> {
+        let Ok(dest) = self.require_current().map(Path::to_path_buf) else {
+            return vec!["No folder is open".into()];
+        };
+
+        let cut = self.clipboard_is_cut;
+        let mut errors = Vec::new();
+        let mut remaining = Vec::new();
+        for path in self.clipboard.clone() {
+            let result = if cut {
+                ops::move_into(&path, &dest)
+            } else {
+                ops::copy(&path, &dest)
+            };
+            if let Err(err) = result {
+                errors.push(err.to_string());
+                remaining.push(path);
+            }
+        }
+
+        if cut {
+            self.clipboard = remaining;
+        }
+        errors
+    }
+
+    /// Sidebar entries: the standard user folders that exist, then the file system root.
+    pub fn places(&self) -> Vec<Place> {
+        let mut places = vec![Place {
+            label: "Home".into(),
+            path: self.home.clone(),
+        }];
+
+        let user_dirs = user_dirs(&self.home);
+        for (label, key) in [
+            ("Desktop", "XDG_DESKTOP_DIR"),
+            ("Documents", "XDG_DOCUMENTS_DIR"),
+            ("Downloads", "XDG_DOWNLOAD_DIR"),
+            ("Music", "XDG_MUSIC_DIR"),
+            ("Pictures", "XDG_PICTURES_DIR"),
+            ("Videos", "XDG_VIDEOS_DIR"),
+        ] {
+            let path = user_dirs
+                .iter()
+                .find(|(name, _)| name == key)
+                .map(|(_, path)| path.clone())
+                .unwrap_or_else(|| self.home.join(label));
+            if path.is_dir() {
+                places.push(Place {
+                    label: label.into(),
+                    path,
+                });
+            }
+        }
+
+        places.push(Place {
+            label: "File System".into(),
+            path: PathBuf::from("/"),
+        });
+        places
+    }
+
+    fn require_current(&self) -> Result<&Path, String> {
+        self.current
+            .as_deref()
+            .ok_or_else(|| "No folder is open".into())
+    }
+}
+
+/// Removes trailing separators and `.` components so equal folders compare equal.
+fn clean(path: &Path) -> PathBuf {
+    path.components().collect()
+}
+
+/// Reads `user-dirs.dirs` into `(KEY, path)` pairs, expanding `$HOME`.
+fn user_dirs(home: &Path) -> Vec<(String, PathBuf)> {
+    let config_home = std::env::var_os("XDG_CONFIG_HOME")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home.join(".config"));
+    let Ok(text) = fs::read_to_string(config_home.join("user-dirs.dirs")) else {
+        return Vec::new();
+    };
+    parse_user_dirs(&text, home)
+}
+
+/// Parses lines of the form `XDG_NAME_DIR="$HOME/path"`.
+fn parse_user_dirs(text: &str, home: &Path) -> Vec<(String, PathBuf)> {
+    text.lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            if line.starts_with('#') {
+                return None;
+            }
+            let (key, value) = line.split_once('=')?;
+            let value = value.trim().trim_matches('"');
+            let path = match value.strip_prefix("$HOME") {
+                Some(rest) => home.join(rest.trim_start_matches('/')),
+                None => PathBuf::from(value),
+            };
+            Some((key.trim().to_string(), path))
+        })
+        .collect()
+}
+
+/// Serializes a listing as a JSON array for the QML front end.
+///
+/// Each element has `name`, `path`, `kind` (`directory`, `file`, `symlink` or
+/// `other`), `size` in bytes, and `modified` as seconds since the Unix epoch
+/// (or `null` when unknown).
+pub fn listing_json(listing: &Listing) -> String {
+    let items: Vec<serde_json::Value> = listing
+        .entries
+        .iter()
+        .map(|entry| {
+            serde_json::json!({
+                "name": entry.name,
+                "path": entry.path.to_string_lossy(),
+                "kind": kind_name(entry.kind),
+                "size": entry.size,
+                "modified": entry.modified.and_then(|time| {
+                    time.duration_since(UNIX_EPOCH).ok().map(|after| after.as_secs())
+                }),
+            })
+        })
+        .collect();
+    serde_json::Value::Array(items).to_string()
+}
+
+/// Serializes places as a JSON array of `{label, path}` objects.
+pub fn places_json(places: &[Place]) -> String {
+    let items: Vec<serde_json::Value> = places
+        .iter()
+        .map(|place| {
+            serde_json::json!({
+                "label": place.label,
+                "path": place.path.to_string_lossy(),
+            })
+        })
+        .collect();
+    serde_json::Value::Array(items).to_string()
+}
+
+/// Parses a JSON array of path strings, such as a selection from the front end.
+pub fn parse_paths(json: &str) -> Result<Vec<PathBuf>, String> {
+    let values: Vec<String> =
+        serde_json::from_str(json).map_err(|err| format!("Invalid selection: {err}"))?;
+    Ok(values.into_iter().map(PathBuf::from).collect())
+}
+
+fn kind_name(kind: EntryKind) -> &'static str {
+    match kind {
+        EntryKind::File => "file",
+        EntryKind::Directory => "directory",
+        EntryKind::Symlink => "symlink",
+        EntryKind::Other => "other",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn session(home: &Path) -> Session {
+        Session::new(Config::default(), home.to_path_buf())
+    }
+
+    #[test]
+    fn navigate_and_history() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a");
+        let b = dir.path().join("b");
+        fs::create_dir_all(&a).unwrap();
+        fs::create_dir_all(&b).unwrap();
+
+        let mut s = session(dir.path());
+        s.navigate(&a).unwrap();
+        s.navigate(&b).unwrap();
+        assert!(s.can_go_back());
+        assert!(!s.can_go_forward());
+
+        s.go_back().unwrap();
+        assert_eq!(s.current(), Some(a.as_path()));
+        assert!(s.can_go_forward());
+
+        s.go_forward().unwrap();
+        assert_eq!(s.current(), Some(b.as_path()));
+    }
+
+    #[test]
+    fn navigating_to_new_folder_clears_forward_history() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a");
+        let b = dir.path().join("b");
+        let c = dir.path().join("c");
+        for p in [&a, &b, &c] {
+            fs::create_dir_all(p).unwrap();
+        }
+
+        let mut s = session(dir.path());
+        s.navigate(&a).unwrap();
+        s.navigate(&b).unwrap();
+        s.go_back().unwrap();
+        s.navigate(&c).unwrap();
+        assert!(!s.can_go_forward());
+    }
+
+    #[test]
+    fn failed_navigation_keeps_position() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = session(dir.path());
+        s.navigate(dir.path()).unwrap();
+        assert!(s.navigate(&dir.path().join("missing")).is_err());
+        assert_eq!(s.current(), Some(dir.path()));
+        assert!(!s.can_go_back());
+    }
+
+    #[test]
+    fn go_up_stops_at_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = session(dir.path());
+        s.navigate(Path::new("/")).unwrap();
+        assert!(s.go_up().is_err());
+    }
+
+    #[test]
+    fn sorting_the_same_key_reverses_order() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = session(dir.path());
+        s.sort_by(SortKey::Size);
+        assert_eq!(
+            s.sort_order(),
+            SortOrder {
+                key: SortKey::Size,
+                descending: false
+            }
+        );
+        s.sort_by(SortKey::Size);
+        assert!(s.sort_order().descending);
+        s.sort_by(SortKey::Name);
+        assert_eq!(
+            s.sort_order(),
+            SortOrder {
+                key: SortKey::Name,
+                descending: false
+            }
+        );
+    }
+
+    #[test]
+    fn hidden_files_are_filtered_unless_shown() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join(".hidden"), b"").unwrap();
+        fs::write(dir.path().join("visible"), b"").unwrap();
+
+        let mut s = session(dir.path());
+        s.navigate(dir.path()).unwrap();
+        let names: Vec<_> = s
+            .reload()
+            .unwrap()
+            .entries
+            .into_iter()
+            .map(|e| e.name)
+            .collect();
+        assert_eq!(names, ["visible"]);
+
+        s.toggle_hidden();
+        assert_eq!(s.reload().unwrap().entries.len(), 2);
+    }
+
+    #[test]
+    fn copy_paste_keeps_clipboard_and_cut_clears_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src");
+        let dest = dir.path().join("dest");
+        fs::create_dir_all(&src).unwrap();
+        fs::create_dir_all(&dest).unwrap();
+        fs::write(src.join("f.txt"), b"x").unwrap();
+
+        let mut s = session(dir.path());
+        s.navigate(&dest).unwrap();
+        s.set_clipboard(vec![src.join("f.txt")], false);
+        assert!(s.paste().is_empty());
+        assert!(dest.join("f.txt").exists());
+        assert!(s.can_paste(), "copy keeps the clipboard");
+
+        s.set_clipboard(vec![src.join("f.txt")], true);
+        fs::remove_file(dest.join("f.txt")).unwrap();
+        assert!(s.paste().is_empty());
+        assert!(!src.join("f.txt").exists());
+        assert!(!s.can_paste(), "cut empties the clipboard after success");
+    }
+
+    #[test]
+    fn failed_cut_stays_on_clipboard() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("f.txt");
+        fs::write(&src, b"x").unwrap();
+        let dest = dir.path().join("dest");
+        fs::create_dir_all(&dest).unwrap();
+        fs::write(dest.join("f.txt"), b"existing").unwrap();
+
+        let mut s = session(dir.path());
+        s.navigate(&dest).unwrap();
+        s.set_clipboard(vec![src.clone()], true);
+        assert_eq!(s.paste().len(), 1);
+        assert!(s.can_paste());
+    }
+
+    #[test]
+    fn listing_json_has_expected_fields() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("a.txt"), b"hello").unwrap();
+        fs::create_dir(dir.path().join("sub")).unwrap();
+
+        let mut s = session(dir.path());
+        let listing = s.navigate(dir.path()).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&listing_json(&listing)).unwrap();
+        let items = value.as_array().unwrap();
+        assert_eq!(items[0]["name"], "sub");
+        assert_eq!(items[0]["kind"], "directory");
+        assert_eq!(items[1]["name"], "a.txt");
+        assert_eq!(items[1]["size"], 5);
+        assert!(items[1]["modified"].is_u64());
+    }
+
+    #[test]
+    fn parses_user_dirs_file() {
+        let home = Path::new("/home/u");
+        let text = "# comment\nXDG_DESKTOP_DIR=\"$HOME/Desk\"\nXDG_MUSIC_DIR=\"/data/music\"\n";
+        let parsed = parse_user_dirs(text, home);
+        assert!(parsed.contains(&("XDG_DESKTOP_DIR".into(), PathBuf::from("/home/u/Desk"))));
+        assert!(parsed.contains(&("XDG_MUSIC_DIR".into(), PathBuf::from("/data/music"))));
+    }
+
+    #[test]
+    fn parses_selection_json() {
+        let paths = parse_paths(r#"["/a/b", "/c"]"#).unwrap();
+        assert_eq!(paths, vec![PathBuf::from("/a/b"), PathBuf::from("/c")]);
+        assert!(parse_paths("not json").is_err());
+    }
+
+    #[test]
+    fn places_include_existing_home_and_root() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join("Downloads")).unwrap();
+        let s = session(dir.path());
+        let labels: Vec<_> = s.places().into_iter().map(|p| p.label).collect();
+        assert_eq!(labels.first().map(String::as_str), Some("Home"));
+        assert!(labels.iter().any(|label| label == "Downloads"));
+        assert!(!labels.iter().any(|label| label == "Music"));
+        assert_eq!(labels.last().map(String::as_str), Some("File System"));
+    }
+}

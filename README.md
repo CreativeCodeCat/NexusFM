@@ -1,6 +1,6 @@
 # NexusFM
 
-A lightweight file manager written in Rust, with a Qt 6 Widgets interface.
+A lightweight file manager written in Rust, with a Qt 6 Quick (QML) interface.
 
 ## Features
 
@@ -23,19 +23,19 @@ crates/
   config/       User configuration (TOML, XDG config directory)
   filesystem/   Filesystem backend (directory listing)
   operations/   File operations (create, rename, copy, move, trash)
-  ffi/          C interface over the Rust crates, used by the Qt window
+  session/      Window state without a GUI: history, clipboard, sorting, places
   application/  Terminal listing (`nexusfm` binary)
-  qt/           Launches the Qt window (`nexusfm-qt` binary)
-qt/             Qt 6 Widgets frontend (C++, built with CMake)
+  qt/           Qt Quick window (`nexusfm-qt` binary): Rust backend in
+                src/backend.rs, interface in qml/
 assets/         Application icon
 ```
 
-The core crates have no Qt dependency. The Qt window calls the Rust crates through `crates/ffi`.
+The core crates have no Qt dependency. The Qt window talks to `nexusfm-session` through a `cxx-qt` bridge, and the interface itself is written in QML.
 
 ## Requirements
 
 - Rust 1.85 or newer (the workspace uses edition 2024)
-- CMake 3.21 or newer, a C++17 compiler, and Qt 6 Widgets development files (Qt 6.5 or newer)
+- Qt 6 development files: Qt Core, Gui, Qml, Quick and QuickControls2 (Qt 6.5 or newer), with `qmake6` on the PATH or `QMAKE` set to its path
 
 ## Build and run
 
@@ -53,15 +53,7 @@ Run the Qt window:
 cargo run -p nexusfm-qt -- /path/to/directory
 ```
 
-The first build also runs CMake to compile the Qt frontend. Without a path, the window opens in `$HOME`.
-
-To build the Qt frontend directly with CMake:
-
-```
-cmake -S qt -B qt/build
-cmake --build qt/build
-./qt/build/nexusfm-qt /path/to/directory
-```
+Without a path, the window opens in `$HOME`.
 
 Run the tests and lints:
 
