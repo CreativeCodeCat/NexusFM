@@ -7,6 +7,8 @@ use std::cmp::Ordering;
 use std::path::PathBuf;
 use std::time::SystemTime;
 
+use serde::{Deserialize, Serialize};
+
 /// What kind of object a directory entry is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EntryKind {
@@ -33,7 +35,8 @@ impl Entry {
 }
 
 /// The column a file view is sorted by.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum SortKey {
     #[default]
     Name,
@@ -42,7 +45,7 @@ pub enum SortKey {
 }
 
 /// How a file view is sorted.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct SortOrder {
     pub key: SortKey,
     pub descending: bool,
@@ -62,7 +65,11 @@ pub fn sort_entries(entries: &mut [Entry], order: SortOrder) {
             SortKey::Size => a.size.cmp(&b.size),
             SortKey::Modified => a.modified.cmp(&b.modified),
         };
-        let by_key = if order.descending { by_key.reverse() } else { by_key };
+        let by_key = if order.descending {
+            by_key.reverse()
+        } else {
+            by_key
+        };
 
         by_key.then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
     });
@@ -111,7 +118,10 @@ mod tests {
             entry("big", EntryKind::File, 100),
             entry("dir", EntryKind::Directory, 0),
         ];
-        let order = SortOrder { key: SortKey::Size, descending: true };
+        let order = SortOrder {
+            key: SortKey::Size,
+            descending: true,
+        };
         sort_entries(&mut entries, order);
         let names: Vec<_> = entries.iter().map(|e| e.name.as_str()).collect();
         assert_eq!(names, ["dir", "big", "small"]);
