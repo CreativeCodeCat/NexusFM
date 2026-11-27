@@ -11,12 +11,14 @@
 use std::fs;
 use std::path::Path;
 
-use nexusfm_core::{Entry, EntryKind, NexusError, Result};
+use nexusfm_core::{Entry, NexusError, Result};
 
 mod applications;
+mod metadata;
 mod properties;
 mod watch;
 pub use applications::{default_application, default_in};
+pub use metadata::{Metadata, read_metadata};
 pub use properties::{FileProperties, permission_string, read_properties};
 pub use watch::DirectoryWatcher;
 
@@ -29,29 +31,18 @@ pub fn list_directory(dir: &Path) -> Result<Vec<Entry>> {
 
     for item in fs::read_dir(dir).map_err(|err| NexusError::io(dir, err))? {
         let Ok(item) = item else { continue };
-        let Ok(file_type) = item.file_type() else {
+        let path = item.path();
+        let Ok(fs_meta) = item.metadata() else {
             continue;
         };
-        let Ok(metadata) = item.metadata() else {
-            continue;
-        };
-
-        let kind = if file_type.is_symlink() {
-            EntryKind::Symlink
-        } else if file_type.is_dir() {
-            EntryKind::Directory
-        } else if file_type.is_file() {
-            EntryKind::File
-        } else {
-            EntryKind::Other
-        };
+        let meta = Metadata::from_fs(&path, &fs_meta);
 
         entries.push(Entry {
             name: item.file_name().to_string_lossy().into_owned(),
-            path: item.path(),
-            kind,
-            size: metadata.len(),
-            modified: metadata.modified().ok(),
+            path,
+            kind: meta.kind,
+            size: meta.size,
+            modified: meta.modified,
         });
     }
 
@@ -61,6 +52,7 @@ pub fn list_directory(dir: &Path) -> Result<Vec<Entry>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nexusfm_core::EntryKind;
 
     #[test]
     fn lists_files_and_directories() {
