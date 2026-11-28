@@ -10,7 +10,8 @@ fn main() {
     CxxQtBuilder::new_qml_module(
         QmlModule::new("NexusFM")
             .qml_file("qml/Main.qml")
-            .qml_file("qml/ErrorPanel.qml"),
+            .qml_file("qml/ErrorPanel.qml")
+            .qml_file("qml/Pane.qml"),
     )
     .qt_module("Quick")
     .qt_module("QuickControls2")

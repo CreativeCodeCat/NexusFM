@@ -104,6 +104,12 @@ impl Session {
         let Some(current) = self.tabs[self.active].current.clone() else {
             return false;
         };
+        self.add_bookmark_path(current)
+    }
+
+    /// Bookmarks `path`. Returns `false` if it is already bookmarked.
+    pub fn add_bookmark_path(&mut self, path: PathBuf) -> bool {
+        let current = clean(&path);
         if self
             .bookmarks
             .iter()
@@ -427,29 +433,37 @@ impl Session {
     /// A cut keeps only the items that failed, so they can be retried.
     /// Returns one message per failure.
     pub fn paste(&mut self) -> Vec<String> {
-        let Ok(dest) = self.require_current().map(Path::to_path_buf) else {
-            return vec!["No folder is open".into()];
-        };
-
         let cut = self.clipboard_is_cut;
-        let mut errors = Vec::new();
-        let mut remaining = Vec::new();
-        for path in self.clipboard.clone() {
-            let result = if cut {
-                ops::move_into(&path, &dest)
-            } else {
-                ops::copy(&path, &dest)
-            };
-            if let Err(err) = result {
-                errors.push(err.to_string());
-                remaining.push(path);
-            }
-        }
-
+        let paths = self.clipboard.clone();
+        let (remaining, errors) = self.paste_items(&paths, cut);
         if cut {
             self.clipboard = remaining;
         }
         errors
+    }
+
+    /// Copies or moves `paths` into the current folder. Returns the paths that
+    /// failed, so a cut can keep them, and one message per failure.
+    /// Items are never overwritten.
+    pub fn paste_items(&self, paths: &[PathBuf], cut: bool) -> (Vec<PathBuf>, Vec<String>) {
+        let Ok(dest) = self.require_current().map(Path::to_path_buf) else {
+            return (paths.to_vec(), vec!["No folder is open".into()]);
+        };
+
+        let mut errors = Vec::new();
+        let mut failed = Vec::new();
+        for path in paths {
+            let result = if cut {
+                ops::move_into(path, &dest)
+            } else {
+                ops::copy(path, &dest)
+            };
+            if let Err(err) = result {
+                errors.push(err.to_string());
+                failed.push(path.clone());
+            }
+        }
+        (failed, errors)
     }
 
     /// Sidebar entries: the standard user folders that exist, then the file system root.
@@ -759,6 +773,37 @@ mod tests {
         );
         assert_eq!(s.tab_count(), 1);
         assert!(s.switch_tab(5).is_err());
+    }
+
+    #[test]
+    fn paste_items_copies_into_the_current_folder_and_reports_failures() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src.txt");
+        fs::write(&src, b"data").unwrap();
+        let dest = dir.path().join("dest");
+        fs::create_dir(&dest).unwrap();
+        fs::write(dest.join("taken.txt"), b"old").unwrap();
+        let taken = dir.path().join("taken.txt");
+        fs::write(&taken, b"new").unwrap();
+
+        let mut s = session(dir.path());
+        s.navigate(&dest).unwrap();
+        let (failed, errors) = s.paste_items(&[src.clone(), taken.clone()], false);
+        assert!(dest.join("src.txt").exists());
+        assert_eq!(failed, vec![taken]);
+        assert_eq!(errors.len(), 1);
+        assert!(src.exists(), "a copy leaves the source in place");
+    }
+
+    #[test]
+    fn bookmarks_can_be_added_for_any_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let other = dir.path().join("other");
+        fs::create_dir(&other).unwrap();
+        let mut s = session(dir.path());
+        assert!(s.add_bookmark_path(other.clone()));
+        assert!(!s.add_bookmark_path(other.clone()));
+        assert_eq!(s.bookmarks()[0].path, other);
     }
 
     #[test]

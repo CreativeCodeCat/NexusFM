@@ -113,6 +113,21 @@ pub mod qobject {
         #[cxx_name = "saveWindowState"]
         fn save_window_state(self: Pin<&mut Backend>, json: &QString);
 
+        /// A secondary pane does not save tabs; only the primary pane does. Call before start.
+        #[qinvokable]
+        #[cxx_name = "setPersistent"]
+        fn set_persistent(self: Pin<&mut Backend>, on: bool);
+
+        /// Pastes items into the current folder. Returns a JSON array of the paths that failed.
+        #[qinvokable]
+        #[cxx_name = "pasteItems"]
+        fn paste_items(self: Pin<&mut Backend>, paths: &QString, cut: bool) -> QString;
+
+        /// Bookmarks an explicit folder.
+        #[qinvokable]
+        #[cxx_name = "addBookmarkPath"]
+        fn add_bookmark_path(self: Pin<&mut Backend>, path: &QString);
+
         /// Opens a new tab showing the current folder.
         #[qinvokable]
         #[cxx_name = "newTab"]
@@ -208,6 +223,8 @@ pub struct BackendRust {
     devices: Vec<nexusfm_filesystem::Device>,
     /// The tabs as last saved, so unchanged tabs are not written again.
     saved_tabs: String,
+    /// Whether this backend saves tabs. The primary pane does; a second pane does not.
+    persistent: bool,
 }
 
 impl Default for BackendRust {
@@ -243,6 +260,7 @@ impl Default for BackendRust {
             watcher: None,
             devices: Vec::new(),
             saved_tabs: String::new(),
+            persistent: true,
         }
     }
 }
@@ -379,6 +397,9 @@ impl qobject::Backend {
 
     /// Saves the open tabs, if they changed since the last save.
     fn persist_tabs(mut self: Pin<&mut Self>) {
+        if !self.as_mut().rust_mut().get_mut().persistent {
+            return;
+        }
         let state = self.as_mut().with_session(|s| nexusfm_config::TabsState {
             tabs: s
                 .tab_paths()
@@ -509,8 +530,8 @@ impl qobject::Backend {
         self.as_mut()
             .set_window_state_json(to_qstring(&layout.to_json()));
 
-        // With no folder given, bring back the tabs from last time.
-        if text.trim().is_empty() {
+        // With no folder given, bring back the tabs from last time (primary pane only).
+        if text.trim().is_empty() && self.as_mut().rust_mut().get_mut().persistent {
             let saved = nexusfm_config::TabsState::load_user(
                 std::env::var_os("XDG_STATE_HOME").as_deref(),
                 std::env::var_os("HOME").as_deref(),
@@ -595,6 +616,37 @@ impl qobject::Backend {
         let home = std::env::var_os("HOME");
         if let Err(err) = state.save_user(xdg.as_deref(), home.as_deref()) {
             eprintln!("nexusfm: cannot save window layout: {err}");
+        }
+    }
+
+    pub fn set_persistent(mut self: Pin<&mut Self>, on: bool) {
+        self.as_mut().rust_mut().get_mut().persistent = on;
+    }
+
+    pub fn paste_items(mut self: Pin<&mut Self>, paths: &QString, cut: bool) -> QString {
+        let paths = match parse_paths(&String::from(paths)) {
+            Ok(paths) => paths,
+            Err(message) => {
+                self.as_mut().set_error_text(to_qstring(&message));
+                return QString::from("[]");
+            }
+        };
+        let (failed, errors) = self.as_mut().with_session(|s| s.paste_items(&paths, cut));
+        if !errors.is_empty() {
+            self.as_mut().set_error_text(to_qstring(&errors.join("\n")));
+        }
+        self.refresh();
+        let failed: Vec<String> = failed
+            .iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect();
+        to_qstring(&serde_json::to_string(&failed).unwrap_or_else(|_| "[]".into()))
+    }
+
+    pub fn add_bookmark_path(mut self: Pin<&mut Self>, path: &QString) {
+        let path = PathBuf::from(String::from(path));
+        if self.as_mut().with_session(|s| s.add_bookmark_path(path)) {
+            self.persist_bookmarks();
         }
     }
 

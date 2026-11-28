@@ -22,8 +22,13 @@ ApplicationWindow {
 
     // ---- Backend and view state ------------------------------------------
 
+    // The primary pane's backend: saves tabs, bookmarks and the window layout,
+    // and feeds the sidebar. The second pane in split view has its own backend.
     Backend {
         id: backend
+    }
+    Backend {
+        id: secondBackend
     }
 
     // Picks up changes made to the open folder by other programs.
@@ -34,12 +39,18 @@ ApplicationWindow {
         onTriggered: backend.checkForChanges()
     }
 
-    property var entries: []
     property var places: []
-    // Titles of the open tabs.
-    property var tabs: []
-    // The folder the current entries belong to.
-    property string shownPath: ""
+    // Split view: a second pane beside the first.
+    property bool splitView: false
+    // The pane that shared actions act on: its entries, selection and backend.
+    property var focusedPane: leftPane
+    readonly property var focusedBackend: focusedPane.paneBackend
+    readonly property var entries: focusedPane.entries
+    readonly property var selected: focusedPane.selected
+    readonly property int selectedCount: focusedPane.selectedCount
+    // Items copied or cut in either pane, shared by the whole window.
+    property var clipboardPaths: []
+    property bool clipboardCut: false
     // The bookmark whose context menu is open, and its current name.
     // The device whose context menu is open.
     property string deviceKey: ""
@@ -48,12 +59,6 @@ ApplicationWindow {
     property int bookmarkIndex: -1
     property string bookmarkName: ""
     property var properties: ({})
-    // Selected row indexes. Reassigned, never mutated, so bindings update.
-    property var selected: []
-    property int anchorRow: -1
-    readonly property int selectedCount: selected.length
-
-    readonly property var columnWidths: ({ name: 0, size: 110, type: 90, modified: 170 })
 
     // Layout, remembered between runs (see WindowState in the config crate).
     property bool sidebarVisible: true
@@ -61,8 +66,36 @@ ApplicationWindow {
     property bool toolbarVisible: true
     property bool statusBarVisible: true
 
+    function focusPane(pane) {
+        focusedPane = pane;
+        location.text = focusedBackend.currentPath;
+    }
+
+    function toggleSplit(on) {
+        if (on && secondBackend.currentPath === "") {
+            secondBackend.setPersistent(false);
+            secondBackend.start(backend.currentPath || backend.homePath);
+        }
+        splitView = on;
+        if (!on)
+            focusedPane = leftPane;
+    }
+
+    // Copy or cut the selection of the focused pane, for pasting in either pane.
+    function setClipboard(paths, cut) {
+        clipboardPaths = paths;
+        clipboardCut = cut;
+    }
+
+    // Paste the shared clipboard into the focused pane. A cut keeps the items that failed.
+    function pasteIntoFocused() {
+        const failed = JSON.parse(focusedBackend.pasteItems(JSON.stringify(clipboardPaths), clipboardCut));
+        if (clipboardCut)
+            clipboardPaths = failed;
+    }
+
     function folderName() {
-        const path = backend.currentPath.replace(/\/+$/, "");
+        const path = focusedBackend.currentPath.replace(/\/+$/, "");
         if (path.length === 0)
             return "";
         const name = path.substring(path.lastIndexOf("/") + 1);
@@ -111,44 +144,12 @@ ApplicationWindow {
         window.applyLayout(backend.windowStateJson);
     }
 
+    // Changes that belong to the primary backend: the sidebar and the window layout.
     Connections {
         target: backend
 
-        function onEntriesJsonChanged() {
-            // A refresh of the same folder keeps the selected items; a new folder clears it.
-            const previous = window.selectedPaths();
-            const samePlace = window.shownPath === backend.currentPath;
-            window.entries = JSON.parse(backend.entriesJson);
-            window.shownPath = backend.currentPath;
-            if (samePlace && previous.length > 0) {
-                window.selected = window.entries
-                    .map(function (entry, row) { return previous.indexOf(entry.path) >= 0 ? row : -1; })
-                    .filter(function (row) { return row >= 0; });
-            } else {
-                window.selected = [];
-                window.anchorRow = -1;
-            }
-        }
-
-        function onTabsJsonChanged() {
-            window.tabs = JSON.parse(backend.tabsJson);
-            tabBar.currentIndex = backend.activeTab;
-        }
-
-        function onActiveTabChanged() {
-            tabBar.currentIndex = backend.activeTab;
-        }
-
         function onPlacesJsonChanged() {
             window.places = JSON.parse(backend.placesJson);
-        }
-
-        function onCurrentPathChanged() {
-            location.text = backend.currentPath;
-        }
-
-        function onPropertiesJsonChanged() {
-            window.properties = JSON.parse(backend.propertiesJson);
         }
 
         function onErrorTextChanged() {
@@ -157,50 +158,30 @@ ApplicationWindow {
         }
     }
 
+    // Errors from either pane are shown in the same panel.
+    Connections {
+        target: secondBackend
+
+        function onErrorTextChanged() {
+            if (secondBackend.errorText.length > 0)
+                errorPanel.open();
+        }
+    }
+
+    // The location bar follows the focused pane's folder.
+    Connections {
+        target: window.focusedBackend
+
+        function onCurrentPathChanged() {
+            location.text = window.focusedBackend.currentPath;
+        }
+
+        function onPropertiesJsonChanged() {
+            window.properties = JSON.parse(window.focusedBackend.propertiesJson);
+        }
+    }
+
     // ---- Helpers ----------------------------------------------------------
-
-    function selectedPaths() {
-        return selected
-            .filter(function (row) { return row < entries.length; })
-            .map(function (row) { return entries[row].path; });
-    }
-
-    function selectedEntries() {
-        return selected.map(function (row) { return entries[row]; });
-    }
-
-    function selectOnly(row) {
-        selected = [row];
-        anchorRow = row;
-    }
-
-    function toggleRow(row) {
-        const index = selected.indexOf(row);
-        selected = index >= 0
-            ? selected.filter(function (r) { return r !== row; })
-            : selected.concat([row]);
-        anchorRow = row;
-    }
-
-    function selectRange(row) {
-        const from = Math.min(anchorRow < 0 ? row : anchorRow, row);
-        const to = Math.max(anchorRow < 0 ? row : anchorRow, row);
-        const rows = [];
-        for (let r = from; r <= to; r++)
-            rows.push(r);
-        selected = rows;
-    }
-
-    function rowColor(row) {
-        if (selected.indexOf(row) >= 0)
-            return window.palette.highlight;
-        return row % 2 === 0 ? "transparent"
-                             : Qt.rgba(window.palette.text.r, window.palette.text.g, window.palette.text.b, 0.05);
-    }
-
-    function textColor(row) {
-        return selected.indexOf(row) >= 0 ? window.palette.highlightedText : window.palette.text;
-    }
 
     // Free space shown after a device name, such as "  4.00 GiB free".
     function capacityText(device) {
@@ -236,16 +217,8 @@ ApplicationWindow {
     }
 
     function showProperties(path) {
-        backend.inspect(path);
+        focusedBackend.inspect(path);
         propertiesDialog.open();
-    }
-
-    function openEntry(entry) {
-        if (entry.kind === "directory")
-            backend.navigate(entry.path);
-        else
-            // Remote entries already carry a URI; local paths need the file:// prefix.
-            Qt.openUrlExternally(entry.path.indexOf("://") > 0 ? entry.path : "file://" + encodeURI(entry.path));
     }
 
     function askText(title, label, initial, action) {
@@ -269,42 +242,42 @@ ApplicationWindow {
         text: qsTr("Cut")
         shortcut: StandardKey.Cut
         enabled: window.selectedCount > 0
-        onTriggered: backend.cut(JSON.stringify(window.selectedPaths()))
+        onTriggered: window.setClipboard(window.focusedPane.selectedPaths(), true)
     }
     Action {
         id: copyAction
         text: qsTr("Copy")
         shortcut: StandardKey.Copy
         enabled: window.selectedCount > 0
-        onTriggered: backend.copy(JSON.stringify(window.selectedPaths()))
+        onTriggered: window.setClipboard(window.focusedPane.selectedPaths(), false)
     }
     Action {
         id: pasteAction
         text: qsTr("Paste")
         shortcut: StandardKey.Paste
-        enabled: backend.canPaste
-        onTriggered: backend.paste()
+        enabled: window.clipboardPaths.length > 0
+        onTriggered: window.pasteIntoFocused()
     }
     Action {
         id: renameAction
         text: qsTr("Rename...")
         shortcut: "F2"
         enabled: window.selectedCount === 1
-        onTriggered: window.askText(qsTr("Rename"), qsTr("New name:"), window.entries[window.selected[0]].name, "rename")
+        onTriggered: window.askText(qsTr("Rename"), qsTr("New name:"), window.focusedPane.entries[window.focusedPane.selected[0]].name, "rename")
     }
     Action {
         id: propertiesAction
         text: qsTr("Properties")
         shortcut: "Alt+Return"
         enabled: window.selectedCount === 1
-        onTriggered: window.showProperties(window.entries[window.selected[0]].path)
+        onTriggered: window.showProperties(window.focusedPane.entries[window.focusedPane.selected[0]].path)
     }
     Action {
         id: trashAction
         text: qsTr("Move to Trash")
         shortcut: StandardKey.Delete
         enabled: window.selectedCount > 0
-        onTriggered: backend.moveToTrash(JSON.stringify(window.selectedPaths()))
+        onTriggered: window.focusedBackend.moveToTrash(JSON.stringify(window.focusedPane.selectedPaths()))
     }
     Action {
         id: sidebarAction
@@ -333,40 +306,40 @@ ApplicationWindow {
         text: qsTr("Show Hidden Files")
         shortcut: "Ctrl+H"
         checkable: true
-        checked: backend.showHidden
-        onTriggered: backend.toggleHiddenFiles()
+        checked: window.focusedBackend.showHidden
+        onTriggered: window.focusedBackend.toggleHiddenFiles()
     }
     Action {
         id: reloadAction
         text: qsTr("Reload")
         shortcut: StandardKey.Refresh
-        onTriggered: backend.reload()
+        onTriggered: window.focusedBackend.reload()
     }
     Action {
         id: backAction
         text: qsTr("Back")
         shortcut: "Alt+Left"
-        enabled: backend.canGoBack
-        onTriggered: backend.goBack()
+        enabled: window.focusedBackend.canGoBack
+        onTriggered: window.focusedBackend.goBack()
     }
     Action {
         id: forwardAction
         text: qsTr("Forward")
         shortcut: "Alt+Right"
-        enabled: backend.canGoForward
-        onTriggered: backend.goForward()
+        enabled: window.focusedBackend.canGoForward
+        onTriggered: window.focusedBackend.goForward()
     }
     Action {
         id: upAction
         text: qsTr("Up")
         shortcut: "Alt+Up"
-        onTriggered: backend.goUp()
+        onTriggered: window.focusedBackend.goUp()
     }
     Action {
         id: homeAction
         text: qsTr("Home")
         shortcut: "Alt+Home"
-        onTriggered: backend.navigate(backend.homePath)
+        onTriggered: window.focusedBackend.navigate(window.focusedBackend.homePath)
     }
     ActionGroup {
         id: viewGroup
@@ -376,65 +349,85 @@ ApplicationWindow {
         id: detailedAction
         text: qsTr("Detailed List")
         checkable: true
-        checked: backend.viewMode === 0
+        checked: window.focusedBackend.viewMode === 0
         ActionGroup.group: viewGroup
-        onTriggered: backend.chooseViewMode(0)
+        onTriggered: window.focusedBackend.chooseViewMode(0)
     }
     Action {
         id: compactAction
         text: qsTr("Compact")
         checkable: true
-        checked: backend.viewMode === 1
+        checked: window.focusedBackend.viewMode === 1
         ActionGroup.group: viewGroup
-        onTriggered: backend.chooseViewMode(1)
+        onTriggered: window.focusedBackend.chooseViewMode(1)
     }
     Action {
         id: iconAction
         text: qsTr("Icons")
         checkable: true
-        checked: backend.viewMode === 2
+        checked: window.focusedBackend.viewMode === 2
         ActionGroup.group: viewGroup
-        onTriggered: backend.chooseViewMode(2)
+        onTriggered: window.focusedBackend.chooseViewMode(2)
     }
     Action {
         id: addBookmarkAction
         text: qsTr("Bookmark This Folder")
         shortcut: "Ctrl+D"
-        onTriggered: backend.addBookmark()
+        onTriggered: backend.addBookmarkPath(window.focusedBackend.currentPath)
     }
     Action {
         id: newTabAction
         text: qsTr("New Tab")
         shortcut: "Ctrl+T"
-        onTriggered: backend.newTab()
+        onTriggered: window.focusedBackend.newTab()
     }
     Action {
         id: closeTabAction
         text: qsTr("Close Tab")
         shortcut: "Ctrl+W"
-        enabled: window.tabs.length > 1
-        onTriggered: backend.closeTab(backend.activeTab)
+        enabled: window.focusedPane.tabs.length > 1
+        onTriggered: window.focusedBackend.closeTab(window.focusedBackend.activeTab)
     }
     Action {
         id: nextTabAction
         text: qsTr("Next Tab")
         shortcut: "Ctrl+Tab"
-        enabled: window.tabs.length > 1
-        onTriggered: backend.switchTab((backend.activeTab + 1) % window.tabs.length)
+        enabled: window.focusedPane.tabs.length > 1
+        onTriggered: window.focusedBackend.switchTab((window.focusedBackend.activeTab + 1) % window.focusedPane.tabs.length)
     }
     Action {
         id: previousTabAction
         text: qsTr("Previous Tab")
         shortcut: "Ctrl+Shift+Tab"
-        enabled: window.tabs.length > 1
-        onTriggered: backend.switchTab((backend.activeTab + window.tabs.length - 1) % window.tabs.length)
+        enabled: window.focusedPane.tabs.length > 1
+        onTriggered: window.focusedBackend.switchTab((window.focusedBackend.activeTab + window.focusedPane.tabs.length - 1) % window.focusedPane.tabs.length)
     }
     Action {
         id: openInNewTabAction
         text: qsTr("Open in New Tab")
-        enabled: window.selectedCount === 1 && window.entries[window.selected[0]].kind === "directory"
-        onTriggered: backend.openInNewTab(window.entries[window.selected[0]].path)
+        enabled: window.selectedCount === 1 && window.focusedPane.entries[window.focusedPane.selected[0]].kind === "directory"
+        onTriggered: window.focusedBackend.openInNewTab(window.focusedPane.entries[window.focusedPane.selected[0]].path)
     }
+    // Split view: show a second pane beside the first.
+    Action {
+        id: splitAction
+        text: qsTr("Split View")
+        shortcut: "F3"
+        checkable: true
+        checked: window.splitView
+        onTriggered: window.toggleSplit(checked)
+    }
+    // Actions that the panes' menus use.
+    readonly property var acts: ({
+        newFolder: newFolderAction,
+        cut: cutAction,
+        copy: copyAction,
+        paste: pasteAction,
+        rename: renameAction,
+        trash: trashAction,
+        properties: propertiesAction,
+        openInNewTab: openInNewTabAction
+    })
     Action {
         id: quitAction
         text: qsTr("Quit")
@@ -493,6 +486,8 @@ ApplicationWindow {
                     MenuItem { action: detailedAction }
                     MenuItem { action: compactAction }
                     MenuItem { action: iconAction }
+                    MenuSeparator {}
+                    MenuItem { action: splitAction }
                     MenuSeparator {}
                     MenuItem { action: sidebarAction }
                     MenuItem { action: toolbarAction }
@@ -574,13 +569,13 @@ ApplicationWindow {
                 id: location
                 Layout.fillWidth: true
                 placeholderText: qsTr("Location")
-                text: backend.currentPath
+                text: window.focusedBackend.currentPath
                 selectByMouse: true
-                onAccepted: backend.openLocation(text)
+                onAccepted: window.focusedBackend.openLocation(text)
             }
         }
 
-        // ---- Sidebar and file list ----------------------------------------
+        // ---- Sidebar and file panes ---------------------------------------
 
         RowLayout {
             id: sidebarRow
@@ -617,7 +612,7 @@ ApplicationWindow {
                         anchors.fill: parent
                         text: modelData.kind === "device" ? modelData.label + window.capacityText(modelData) : modelData.label
                         highlighted: modelData.kind !== "device" && backend.currentPath === modelData.path
-                        onClicked: modelData.kind === "device" ? backend.openDevice(modelData.key) : backend.navigate(modelData.path)
+                        onClicked: modelData.kind === "device" ? backend.openDevice(modelData.key) : window.focusedBackend.navigate(modelData.path)
                     }
 
                     // Right-click on a bookmark or device opens its menu; left clicks pass through.
@@ -663,265 +658,36 @@ ApplicationWindow {
                 }
             }
 
-            ColumnLayout {
+            // One pane, or two side by side in split view. Each has its own tabs and history.
+            RowLayout {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 spacing: 0
 
-                // Tabs, shown once there is more than one.
-                TabBar {
-                    id: tabBar
-                    Layout.fillWidth: true
-                    visible: window.tabs.length > 1
-
-                    Repeater {
-                        model: window.tabs
-
-                        delegate: TabButton {
-                            required property string modelData
-                            required property int index
-
-                            onClicked: backend.switchTab(index)
-
-                            contentItem: RowLayout {
-                                spacing: 4
-                                Label {
-                                    Layout.fillWidth: true
-                                    text: modelData
-                                    elide: Text.ElideRight
-                                    horizontalAlignment: Text.AlignHCenter
-                                }
-                                ToolButton {
-                                    text: "\u00D7"
-                                    implicitWidth: 22
-                                    implicitHeight: 22
-                                    ToolTip.text: qsTr("Close Tab")
-                                    ToolTip.visible: hovered
-                                    onClicked: backend.closeTab(index)
-                                }
-                            }
-
-                            // Middle-click closes a tab, as in most tabbed apps.
-                            MouseArea {
-                                anchors.fill: parent
-                                acceptedButtons: Qt.MiddleButton
-                                onClicked: backend.closeTab(index)
-                            }
-                        }
-                    }
-                }
-
-                // Column headers. Clicking one sorts by that column.
-                Row {
-                    id: headerRow
-                    Layout.fillWidth: true
-                    visible: backend.viewMode === 0
-                    height: visible ? 26 : 0
-
-                    Repeater {
-                        model: [
-                            { title: qsTr("Name"), key: 0, width: -1 },
-                            { title: qsTr("Size"), key: 1, width: window.columnWidths.size },
-                            { title: qsTr("Type"), key: -1, width: window.columnWidths.type },
-                            { title: qsTr("Modified"), key: 2, width: window.columnWidths.modified }
-                        ]
-
-                        delegate: Rectangle {
-                            required property var modelData
-                            required property int index
-                            width: modelData.width < 0 ? headerRow.width - (headerRow.children.length > 1 ? 0 : 0)
-                                                       - window.columnWidths.size - window.columnWidths.type - window.columnWidths.modified
-                                                       : modelData.width
-                            height: headerRow.height
-                            color: window.palette.button
-
-                            Label {
-                                anchors.fill: parent
-                                anchors.leftMargin: 6
-                                verticalAlignment: Text.AlignVCenter
-                                elide: Text.ElideRight
-                                text: modelData.title + (backend.sortKey === modelData.key
-                                                         ? (backend.descending ? " ▾" : " ▴") : "")
-                            }
-
-                            MouseArea {
-                                anchors.fill: parent
-                                enabled: modelData.key >= 0
-                                onClicked: backend.sortBy(modelData.key)
-                            }
-                        }
-                    }
-                }
-
-                // The three layouts share one model and one selection.
-                Item {
+                Pane {
+                    id: leftPane
                     Layout.fillWidth: true
                     Layout.fillHeight: true
+                    paneBackend: backend
+                    main: window
+                    active: window.focusedPane === leftPane
+                }
 
-                    MouseArea {
-                        // Clicking empty space clears the selection.
-                        anchors.fill: parent
-                        acceptedButtons: Qt.LeftButton | Qt.RightButton
-                        onClicked: function (mouse) {
-                            if (mouse.button === Qt.RightButton)
-                                contextMenu.popup();
-                            else
-                                window.selected = [];
-                        }
-                    }
+                Rectangle {
+                    Layout.preferredWidth: window.splitView ? 1 : 0
+                    Layout.fillHeight: true
+                    visible: window.splitView
+                    color: window.palette.mid
+                }
 
-                    ListView {
-                        id: fileView
-                        anchors.fill: parent
-                        visible: backend.viewMode === 0
-                        clip: true
-                        model: window.entries
-                        focus: true
-                        keyNavigationEnabled: true
-                        ScrollBar.vertical: ScrollBar {}
-
-                        delegate: Rectangle {
-                            required property var modelData
-                            required property int index
-
-                            width: fileView.width
-                            height: 26
-                            color: window.rowColor(index)
-
-                            RowLayout {
-                                anchors.fill: parent
-                                spacing: 0
-
-                                Label {
-                                    Layout.fillWidth: true
-                                    Layout.leftMargin: 6
-                                    text: modelData.name
-                                    elide: Text.ElideRight
-                                    font.bold: modelData.kind === "directory"
-                                    color: window.textColor(index)
-                                }
-                                Label {
-                                    Layout.preferredWidth: window.columnWidths.size
-                                    horizontalAlignment: Text.AlignRight
-                                    rightPadding: 8
-                                    text: modelData.kind === "directory" ? "" : window.formatSize(modelData.size)
-                                    color: window.textColor(index)
-                                }
-                                Label {
-                                    Layout.preferredWidth: window.columnWidths.type
-                                    leftPadding: 6
-                                    text: window.typeName(modelData.kind)
-                                    color: window.textColor(index)
-                                }
-                                Label {
-                                    Layout.preferredWidth: window.columnWidths.modified
-                                    leftPadding: 6
-                                    text: window.formatDate(modelData.modified)
-                                    color: window.textColor(index)
-                                }
-                            }
-
-                            ItemClick {
-                                anchors.fill: parent
-                                modelData: parent.modelData
-                                index: parent.index
-                            }
-                        }
-                    }
-
-                    GridView {
-                        // Compact: names only, filling each column top to bottom.
-                        id: compactView
-                        anchors.fill: parent
-                        visible: backend.viewMode === 1
-                        clip: true
-                        cellWidth: 240
-                        cellHeight: 26
-                        flow: GridView.FlowTopToBottom
-                        model: window.entries
-                        ScrollBar.horizontal: ScrollBar {}
-
-                        delegate: Rectangle {
-                            required property var modelData
-                            required property int index
-
-                            width: compactView.cellWidth
-                            height: compactView.cellHeight
-                            color: window.rowColor(index)
-
-                            Label {
-                                anchors.fill: parent
-                                leftPadding: 6
-                                rightPadding: 6
-                                verticalAlignment: Text.AlignVCenter
-                                text: modelData.name
-                                elide: Text.ElideRight
-                                font.bold: modelData.kind === "directory"
-                                color: window.textColor(index)
-                            }
-
-                            ItemClick {
-                                anchors.fill: parent
-                                modelData: parent.modelData
-                                index: parent.index
-                            }
-                        }
-                    }
-
-                    GridView {
-                        // Icons: a placeholder tile per entry, with the name beneath.
-                        id: iconView
-                        anchors.fill: parent
-                        visible: backend.viewMode === 2
-                        clip: true
-                        cellWidth: 120
-                        cellHeight: 104
-                        model: window.entries
-                        ScrollBar.vertical: ScrollBar {}
-
-                        delegate: Rectangle {
-                            required property var modelData
-                            required property int index
-
-                            width: iconView.cellWidth
-                            height: iconView.cellHeight
-                            radius: 4
-                            color: window.rowColor(index)
-
-                            Column {
-                                anchors.horizontalCenter: parent.horizontalCenter
-                                anchors.top: parent.top
-                                anchors.topMargin: 8
-                                width: parent.width - 12
-                                spacing: 6
-
-                                Rectangle {
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    width: 48
-                                    height: 40
-                                    radius: 4
-                                    color: modelData.kind === "directory"
-                                           ? Qt.rgba(0.35, 0.6, 0.9, 1)
-                                           : window.palette.mid
-                                }
-                                Label {
-                                    width: parent.width
-                                    horizontalAlignment: Text.AlignHCenter
-                                    wrapMode: Text.Wrap
-                                    maximumLineCount: 2
-                                    elide: Text.ElideRight
-                                    text: modelData.name
-                                    color: window.textColor(index)
-                                }
-                            }
-
-                            ItemClick {
-                                anchors.fill: parent
-                                modelData: parent.modelData
-                                index: parent.index
-                            }
-                        }
-                    }
+                Pane {
+                    id: rightPane
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    visible: window.splitView
+                    paneBackend: secondBackend
+                    main: window
+                    active: window.focusedPane === rightPane
                 }
             }
         }
@@ -933,60 +699,12 @@ ApplicationWindow {
             Layout.leftMargin: 8
             Layout.bottomMargin: 2
             visible: window.statusBarVisible
-            text: backend.statusText
+            text: window.focusedBackend.statusText
             color: window.palette.placeholderText
         }
     }
 
-    // ---- Context menu for files and empty space ---------------------------
-
-    Menu {
-        id: contextMenu
-        MenuItem {
-            action: openInNewTabAction
-            visible: openInNewTabAction.enabled
-            height: visible ? implicitHeight : 0
-        }
-        MenuItem { action: newFolderAction }
-        MenuSeparator {}
-        MenuItem { action: cutAction }
-        MenuItem { action: copyAction }
-        MenuItem { action: pasteAction }
-        MenuSeparator {}
-        MenuItem { action: renameAction }
-        MenuItem { action: trashAction }
-        MenuSeparator {}
-        MenuItem { action: propertiesAction }
-    }
-
-
     // ---- Edge handles for resizing the frameless window -------------------
-
-    // Click handling shared by all file layouts: select, extend the selection,
-    // open on double-click, or show the context menu on right-click.
-    component ItemClick: MouseArea {
-        required property var modelData
-        required property int index
-
-        acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
-        onClicked: function (mouse) {
-            if (mouse.button === Qt.MiddleButton) {
-                if (modelData.kind === "directory")
-                    backend.openInNewTab(modelData.path);
-            } else if (mouse.button === Qt.RightButton) {
-                if (window.selected.indexOf(index) < 0)
-                    window.selectOnly(index);
-                contextMenu.popup();
-            } else if (mouse.modifiers & Qt.ControlModifier) {
-                window.toggleRow(index);
-            } else if (mouse.modifiers & Qt.ShiftModifier) {
-                window.selectRange(index);
-            } else {
-                window.selectOnly(index);
-            }
-        }
-        onDoubleClicked: window.openEntry(modelData)
-    }
 
     component EdgeHandle: MouseArea {
         required property int edges
@@ -1111,16 +829,19 @@ ApplicationWindow {
             if (name.length === 0)
                 return;
             if (action === "create")
-                backend.createFolder(name);
+                window.focusedBackend.createFolder(name);
             else if (action === "rename")
-                backend.renameItem(window.entries[window.selected[0]].path, name);
+                window.focusedBackend.renameItem(window.focusedPane.entries[window.focusedPane.selected[0]].path, name);
         }
     }
 
     ErrorPanel {
         id: errorPanel
-        message: backend.errorText
-        onClosed: backend.clearError()
+        message: backend.errorText || secondBackend.errorText
+        onClosed: {
+            backend.clearError();
+            secondBackend.clearError();
+        }
     }
 
     Dialog {
