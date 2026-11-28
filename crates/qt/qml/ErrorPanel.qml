@@ -12,14 +12,16 @@ Dialog {
 
     property alias message: text.text
 
+    // An explicit width keeps the dialog's size from depending on the wrapped text,
+    // which would make the two bindings loop.
+    width: 400
     title: qsTr("NexusFM")
     modal: true
     standardButtons: Dialog.Ok
-    anchors.centerIn: Overlay.overlay
 
     Label {
         id: text
-        width: 360
+        width: panel.availableWidth
         wrapMode: Text.Wrap
     }
 }
