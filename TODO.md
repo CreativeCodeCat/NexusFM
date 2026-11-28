@@ -165,15 +165,15 @@ Items are grouped by subsystem and roughly ordered by implementation dependencie
 
 ### Devices
 
-- [ ] Mounted volumes
-- [ ] Removable drives
+- [x] Mounted volumes
+- [x] Removable drives
 - [ ] Optical drives
 - [ ] USB devices
-- [ ] Network locations
-- [ ] Mount and unmount actions
+- [x] Network locations
+- [x] Mount and unmount actions
 - [ ] Eject and safely remove actions
-- [ ] Device capacity indicators
-- [ ] Device context menus
+- [x] Device capacity indicators
+- [x] Device context menus
 
 ### Bookmarks
 
@@ -381,22 +381,22 @@ Items are grouped by subsystem and roughly ordered by implementation dependencie
 
 ## 12. Devices and Mounts
 
-- [ ] Enumerate mounted volumes
-- [ ] Enumerate removable volumes
-- [ ] Mount volumes
-- [ ] Unmount volumes
+- [x] Enumerate mounted volumes
+- [x] Enumerate removable volumes
+- [x] Mount volumes
+- [x] Unmount volumes
 - [ ] Eject removable media
 - [ ] Safely remove devices
-- [ ] Monitor device addition and removal
-- [ ] React to mount and unmount events
+- [x] Monitor device addition and removal
+- [x] React to mount and unmount events
 - [ ] D-Bus integration using `zbus`
 - [ ] UDisks2 integration
-- [ ] Display volume labels
+- [x] Display volume labels
 - [ ] Display filesystem types
-- [ ] Display free and total space
-- [ ] Mount error reporting
-- [ ] Automatic sidebar updates
-- [ ] Support GVFS-mounted devices
+- [x] Display free and total space
+- [x] Mount error reporting
+- [x] Automatic sidebar updates
+- [x] Support GVFS-mounted devices
 
 ## 13. Network and Remote Locations
 
@@ -612,7 +612,7 @@ Items are grouped by subsystem and roughly ordered by implementation dependencie
 - [x] GIO/GVFS integration
 - [x] Qt 6 Quick (QML) frontend
 - [x] Main window and navigation toolbar
-- [ ] Sidebar and Places
+- [x] Sidebar and Places
 - [x] Icon, detailed and compact views
 - [x] Basic file opening
 - [x] Basic file operations

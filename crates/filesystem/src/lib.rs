@@ -15,10 +15,12 @@ use gio::prelude::*;
 use nexusfm_core::{Entry, EntryKind, NexusError, Result};
 
 mod applications;
+mod devices;
 mod metadata;
 mod properties;
 mod watch;
 pub use applications::{default_application, default_in};
+pub use devices::{Device, DeviceKind, list_devices, mount_device, unmount_device};
 pub use metadata::{Metadata, read_metadata};
 pub use properties::{FileProperties, permission_string, read_properties};
 pub use watch::DirectoryWatcher;

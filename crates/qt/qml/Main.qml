@@ -39,6 +39,10 @@ ApplicationWindow {
     // The folder the current entries belong to.
     property string shownPath: ""
     // The bookmark whose context menu is open, and its current name.
+    // The device whose context menu is open.
+    property string deviceKey: ""
+    property bool deviceMounted: false
+    property bool deviceCanUnmount: false
     property int bookmarkIndex: -1
     property string bookmarkName: ""
     property var properties: ({})
@@ -185,6 +189,13 @@ ApplicationWindow {
 
     function textColor(row) {
         return selected.indexOf(row) >= 0 ? window.palette.highlightedText : window.palette.text;
+    }
+
+    // Free space shown after a device name, such as "  4.00 GiB free".
+    function capacityText(device) {
+        if (device.total === null || device.total === undefined)
+            return "";
+        return "  " + window.formatSize(device.free ?? 0) + " free";
     }
 
     function formatSize(bytes) {
@@ -557,17 +568,24 @@ ApplicationWindow {
                     ItemDelegate {
                         visible: modelData.kind !== "header"
                         anchors.fill: parent
-                        text: modelData.label
-                        highlighted: backend.currentPath === modelData.path
-                        onClicked: backend.navigate(modelData.path)
+                        text: modelData.kind === "device" ? modelData.label + window.capacityText(modelData) : modelData.label
+                        highlighted: modelData.kind !== "device" && backend.currentPath === modelData.path
+                        onClicked: modelData.kind === "device" ? backend.openDevice(modelData.key) : backend.navigate(modelData.path)
                     }
 
-                    // Right-click on a bookmark opens its menu; left clicks pass through.
+                    // Right-click on a bookmark or device opens its menu; left clicks pass through.
                     MouseArea {
                         anchors.fill: parent
-                        enabled: modelData.kind === "bookmark"
+                        enabled: modelData.kind === "bookmark" || modelData.kind === "device"
                         acceptedButtons: Qt.RightButton
                         onClicked: {
+                            if (modelData.kind === "device") {
+                                window.deviceKey = modelData.key;
+                                window.deviceMounted = modelData.mounted;
+                                window.deviceCanUnmount = modelData.canUnmount;
+                                deviceMenu.popup();
+                                return;
+                            }
                             window.bookmarkIndex = modelData.index;
                             window.bookmarkName = modelData.label;
                             bookmarkMenu.popup();
@@ -923,6 +941,24 @@ ApplicationWindow {
         anchors.bottom: parent.bottom
         width: grip * 2
         height: grip * 2
+    }
+
+    // ---- Device context menu -----------------------------------------------
+
+    Menu {
+        id: deviceMenu
+        MenuItem {
+            text: qsTr("Mount")
+            visible: !window.deviceMounted
+            height: visible ? implicitHeight : 0
+            onTriggered: backend.mountDevice(window.deviceKey)
+        }
+        MenuItem {
+            text: qsTr("Unmount")
+            visible: window.deviceCanUnmount
+            height: visible ? implicitHeight : 0
+            onTriggered: backend.unmountDevice(window.deviceKey)
+        }
     }
 
     // ---- Bookmark context menu ---------------------------------------------
