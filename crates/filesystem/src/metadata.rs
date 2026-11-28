@@ -5,12 +5,16 @@
 
 //! One description of a filesystem object, shared by listings and properties.
 
-use std::fs;
-use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use gio::prelude::*;
 use nexusfm_core::{EntryKind, NexusError, Result};
+
+/// Attributes read for one object's Properties.
+const METADATA_ATTRIBUTES: &str = "standard::type,standard::size,standard::symlink-target,\
+    time::modified,time::access,time::created,unix::mode,unix::uid,unix::gid,\
+    owner::user,owner::group";
 
 /// What NexusFM knows about a filesystem object. Symbolic links are described
 /// themselves, never the file they point to.
@@ -26,52 +30,67 @@ pub struct Metadata {
     pub mode: u32,
     pub uid: u32,
     pub gid: u32,
+    /// Account and group names, when the system knows them.
+    pub owner: Option<String>,
+    pub group: Option<String>,
     /// Where a symbolic link points.
     pub link_target: Option<PathBuf>,
 }
 
 impl Metadata {
-    /// Describes `path` from metadata that does not follow symbolic links.
-    pub fn from_fs(path: &Path, meta: &fs::Metadata) -> Self {
-        let file_type = meta.file_type();
-        let kind = if file_type.is_symlink() {
-            EntryKind::Symlink
-        } else if file_type.is_dir() {
-            EntryKind::Directory
-        } else if file_type.is_file() {
-            EntryKind::File
-        } else {
-            EntryKind::Other
+    fn from_info(info: &gio::FileInfo) -> Self {
+        let kind = match info.file_type() {
+            gio::FileType::Directory => EntryKind::Directory,
+            gio::FileType::Regular => EntryKind::File,
+            gio::FileType::SymbolicLink => EntryKind::Symlink,
+            _ => EntryKind::Other,
         };
-        let link_target = if kind == EntryKind::Symlink {
-            fs::read_link(path).ok()
-        } else {
-            None
+        let time = |attribute: &str| match info.attribute_uint64(attribute) {
+            0 => None,
+            secs => Some(UNIX_EPOCH + Duration::from_secs(secs)),
         };
 
         Self {
             kind,
-            size: meta.len(),
-            modified: meta.modified().ok(),
-            accessed: meta.accessed().ok(),
-            created: meta.created().ok(),
-            mode: meta.mode() & 0o777,
-            uid: meta.uid(),
-            gid: meta.gid(),
-            link_target,
+            size: u64::try_from(info.size()).unwrap_or(0),
+            modified: time("time::modified"),
+            accessed: time("time::access"),
+            created: time("time::created"),
+            mode: info.attribute_uint32("unix::mode") & 0o777,
+            uid: info.attribute_uint32("unix::uid"),
+            gid: info.attribute_uint32("unix::gid"),
+            owner: info
+                .attribute_string("owner::user")
+                .map(|name| name.to_string()),
+            group: info
+                .attribute_string("owner::group")
+                .map(|name| name.to_string()),
+            link_target: info.symlink_target(),
         }
     }
 }
 
-/// Reads [`Metadata`] for `path`, without following a symbolic link.
+/// Reads [`Metadata`] for a local path or URI, without following a symbolic link.
 pub fn read_metadata(path: &Path) -> Result<Metadata> {
-    let meta = fs::symlink_metadata(path).map_err(|err| NexusError::io(path, err))?;
-    Ok(Metadata::from_fs(path, &meta))
+    let target = if crate::is_uri(path) {
+        gio::File::for_uri(&path.to_string_lossy())
+    } else {
+        gio::File::for_path(path)
+    };
+    let info = target
+        .query_info(
+            METADATA_ATTRIBUTES,
+            gio::FileQueryInfoFlags::NOFOLLOW_SYMLINKS,
+            None::<&gio::Cancellable>,
+        )
+        .map_err(|err| NexusError::Message(format!("{}: {}", path.display(), err.message())))?;
+    Ok(Metadata::from_info(&info))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use std::os::unix::fs::PermissionsExt;
 
     #[test]

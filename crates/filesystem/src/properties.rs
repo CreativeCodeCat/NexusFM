@@ -5,11 +5,10 @@
 
 //! Details shown in a file's Properties dialog.
 
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use nexusfm_core::{EntryKind, NexusError, Result};
+use nexusfm_core::{EntryKind, Result};
 
 use crate::metadata::read_metadata;
 
@@ -46,12 +45,6 @@ impl FileProperties {
 /// Reads the Properties details for `path`. A symbolic link is described
 /// itself, not the file it points to.
 pub fn read_properties(path: &Path) -> Result<FileProperties> {
-    if crate::is_uri(path) {
-        return Err(NexusError::Message(format!(
-            "Properties for {} are not supported yet",
-            path.display()
-        )));
-    }
     let meta = read_metadata(path)?;
     let kind = meta.kind;
     let link_target = meta.link_target.clone();
@@ -78,8 +71,8 @@ pub fn read_properties(path: &Path) -> Result<FileProperties> {
         accessed: meta.accessed,
         created: meta.created,
         mode: meta.mode,
-        owner: user_name(meta.uid),
-        group: group_name(meta.gid),
+        owner: meta.owner.clone().unwrap_or_else(|| meta.uid.to_string()),
+        group: meta.group.clone().unwrap_or_else(|| meta.gid.to_string()),
         link_target,
         mime_type,
         default_application,
@@ -105,31 +98,10 @@ pub fn permission_string(mode: u32) -> String {
         .collect()
 }
 
-/// The account name for `uid`, or the number if it is not in `/etc/passwd`.
-fn user_name(uid: u32) -> String {
-    lookup_name("/etc/passwd", uid).unwrap_or_else(|| uid.to_string())
-}
-
-/// The group name for `gid`, or the number if it is not in `/etc/group`.
-fn group_name(gid: u32) -> String {
-    lookup_name("/etc/group", gid).unwrap_or_else(|| gid.to_string())
-}
-
-/// Finds the name for `id` in a colon-separated account file such as `/etc/passwd`.
-fn lookup_name(file: &str, id: u32) -> Option<String> {
-    let text = fs::read_to_string(file).ok()?;
-    text.lines().find_map(|line| {
-        let mut fields = line.split(':');
-        let name = fields.next()?;
-        let _password = fields.next()?;
-        let this_id: u32 = fields.next()?.parse().ok()?;
-        (this_id == id).then(|| name.to_string())
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use std::os::unix::fs::PermissionsExt;
 
     #[test]
