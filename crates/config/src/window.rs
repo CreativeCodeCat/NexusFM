@@ -79,6 +79,52 @@ impl WindowState {
     }
 }
 
+/// Name of the open-tabs file inside the state directory.
+pub const TABS_FILE_NAME: &str = "tabs.json";
+
+/// The tabs that were open when the window was last used.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TabsState {
+    /// The folder of each tab, as a path or URI, in order.
+    pub tabs: Vec<String>,
+    /// Index of the tab that was on screen.
+    pub active: usize,
+}
+
+impl TabsState {
+    pub fn from_json(text: &str) -> Self {
+        serde_json::from_str(text).unwrap_or_default()
+    }
+
+    pub fn to_json(&self) -> String {
+        serde_json::to_string(self).unwrap_or_else(|_| "{}".to_string())
+    }
+
+    /// Reads the saved tabs. A missing or unreadable file gives no tabs.
+    pub fn load_user(xdg_state_home: Option<&OsStr>, home: Option<&OsStr>) -> Self {
+        state_dir(xdg_state_home, home)
+            .and_then(|dir| fs::read_to_string(dir.join(TABS_FILE_NAME)).ok())
+            .map(|text| Self::from_json(&text))
+            .unwrap_or_default()
+    }
+
+    /// Saves the tabs. Does nothing when no home folder is known.
+    pub fn save_user(
+        &self,
+        xdg_state_home: Option<&OsStr>,
+        home: Option<&OsStr>,
+    ) -> io::Result<()> {
+        let Some(dir) = state_dir(xdg_state_home, home) else {
+            return Ok(());
+        };
+        fs::create_dir_all(&dir)?;
+        let temp = dir.join(format!("{TABS_FILE_NAME}.tmp"));
+        fs::write(&temp, self.to_json())?;
+        fs::rename(&temp, dir.join(TABS_FILE_NAME))
+    }
+}
+
 /// `$XDG_STATE_HOME/nexusfm`, or `$HOME/.local/state/nexusfm`.
 pub fn state_dir(xdg_state_home: Option<&OsStr>, home: Option<&OsStr>) -> Option<PathBuf> {
     let base = match xdg_state_home.filter(|v| !v.is_empty()) {
@@ -126,6 +172,21 @@ mod tests {
         state.save_user(xdg, None).unwrap();
         assert_eq!(WindowState::load_user(xdg, None), state);
         assert!(root.path().join("nexusfm").join(WINDOW_FILE_NAME).is_file());
+    }
+
+    #[test]
+    fn tabs_save_and_load() {
+        let root = tempfile::tempdir().unwrap();
+        let xdg = Some(root.path().as_os_str());
+        assert_eq!(TabsState::load_user(xdg, None), TabsState::default());
+
+        let state = TabsState {
+            tabs: vec!["/home/u".into(), "trash:///".into()],
+            active: 1,
+        };
+        state.save_user(xdg, None).unwrap();
+        assert_eq!(TabsState::load_user(xdg, None), state);
+        assert_eq!(TabsState::from_json("garbage"), TabsState::default());
     }
 
     #[test]

@@ -131,7 +131,7 @@ Items are grouped by subsystem and roughly ordered by implementation dependencie
 - [ ] Tab duplication
 - [ ] Tab reordering
 - [x] Tab closing
-- [ ] Restore previously open tabs
+- [x] Restore previously open tabs
 - [ ] Tab context menus
 - [ ] Split-pane browsing
 - [ ] Independent navigation history per pane
@@ -500,7 +500,7 @@ Items are grouped by subsystem and roughly ordered by implementation dependencie
 - [ ] Clear recent history
 - [ ] Persist navigation history where appropriate
 - [ ] Restore previous session
-- [ ] Restore open tabs
+- [x] Restore open tabs
 - [ ] Restore split-pane state
 - [ ] Configurable history limits
 - [ ] Respect desktop recent-file privacy settings
