@@ -13,6 +13,7 @@ A lightweight file manager written in Rust, with a Qt 6 Quick (QML) interface.
 - Open folders in the window; open files with their default application.
 - File operations from the Edit menu and right-click menu: New Folder, Cut, Copy, Paste, Rename (`F2`) and Move to Trash (`Delete`). Existing files are never overwritten.
 - File properties (Alt+Enter, or Properties in the context menu): type, size, dates, permissions, owner, group and symlink target.
+- The window title shows the current folder. View menu toggles the sidebar (`F9`), toolbar and status bar. The window size, sidebar width and these toggles are remembered in `~/.local/state/nexusfm/window.json`.
 - Custom title bar with minimize, maximize and close buttons, and edge resizing.
 - Settings from a TOML config file (see below).
 

@@ -35,21 +35,21 @@ Items are grouped by subsystem and roughly ordered by implementation dependencie
 - [x] Qt build integrated with Cargo (no CMake)
 - [x] Main application window
 - [x] Startup directory from CLI argument or `$HOME`
-- [ ] Traditional menu bar (File, Edit, View, Go, Bookmarks, Help)
+- [x] Traditional menu bar (File, Edit, View, Go, Bookmarks, Help)
 - [x] Navigation toolbar (back, forward, up, reload)
 - [ ] Breadcrumb location bar
 - [x] Editable location entry
 - [ ] Search button
-- [ ] Sidebar toggle
+- [x] Sidebar toggle
 - [ ] Split-view toggle
 - [x] Main file view backed by a Qt model over the core listing
 - [x] Status bar
 - [x] Application icon from `assets/icon.png`
 - [ ] Window size and position persistence
-- [ ] Remember sidebar width and visibility
-- [ ] Remember toolbar and status bar visibility
+- [x] Remember sidebar width and visibility
+- [x] Remember toolbar and status bar visibility
 - [ ] Multiple application windows
-- [ ] Window title reflecting the current location
+- [x] Window title reflecting the current location
 
 ### Appearance and Customisation
 

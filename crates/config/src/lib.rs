@@ -24,6 +24,9 @@ use nexusfm_core::{SortKey, SortOrder};
 use serde::Deserialize;
 use thiserror::Error;
 
+pub mod window;
+pub use window::WindowState;
+
 /// Name of the configuration file inside the NexusFM config directory.
 pub const CONFIG_FILE_NAME: &str = "config.lua";
 
