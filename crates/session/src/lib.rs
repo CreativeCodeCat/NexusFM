@@ -143,6 +143,27 @@ impl Session {
     }
 
     /// Moves the bookmark at `index` by `delta` places (negative is up).
+    /// Inserts a separator at position `at` in the bookmark list (at most the end).
+    pub fn insert_separator(&mut self, at: usize) {
+        let at = at.min(self.bookmarks.len());
+        self.bookmarks.insert(at, Bookmark::separator());
+    }
+
+    /// Moves the bookmark at `from` so that it ends up at position `to`.
+    pub fn reorder_bookmark(&mut self, from: usize, to: usize) {
+        if from >= self.bookmarks.len() {
+            return;
+        }
+        let item = self.bookmarks.remove(from);
+        let to = to.min(self.bookmarks.len());
+        self.bookmarks.insert(to, item);
+    }
+
+    /// Adds the bookmarks in `incoming` that are not already listed. Returns how many were added.
+    pub fn import_bookmarks(&mut self, incoming: Vec<Bookmark>) -> usize {
+        nexusfm_bookmarks::merge(&mut self.bookmarks, incoming)
+    }
+
     pub fn move_bookmark(&mut self, index: usize, delta: isize) {
         let Some(target) = index.checked_add_signed(delta) else {
             return;
@@ -636,11 +657,16 @@ pub fn sidebar_json(places: &[Place], devices: &[Device], bookmarks: &[Bookmark]
         items.push(serde_json::json!({ "kind": "header", "label": "Bookmarks" }));
     }
     for (index, bookmark) in bookmarks.iter().enumerate() {
+        if bookmark.is_separator() {
+            items.push(serde_json::json!({ "kind": "separator", "index": index }));
+            continue;
+        }
         items.push(serde_json::json!({
             "kind": "bookmark",
             "index": index,
             "label": bookmark.display_name(),
             "path": bookmark.path.to_string_lossy(),
+            "available": bookmark_available(bookmark),
         }));
     }
     serde_json::Value::Array(items).to_string()
@@ -686,6 +712,12 @@ pub fn parse_paths(json: &str) -> Result<Vec<PathBuf>, String> {
     let values: Vec<String> =
         serde_json::from_str(json).map_err(|err| format!("Invalid selection: {err}"))?;
     Ok(values.into_iter().map(PathBuf::from).collect())
+}
+
+/// Whether a bookmarked folder is there. Remote locations are not checked, since
+/// asking a server would hold up the sidebar, so they count as available.
+fn bookmark_available(bookmark: &Bookmark) -> bool {
+    is_uri(&bookmark.path) || bookmark.path.exists()
 }
 
 fn device_kind_name(kind: DeviceKind) -> &'static str {
@@ -843,6 +875,78 @@ mod tests {
             !file.exists() && b.join("note.txt").exists(),
             "move removes the source"
         );
+    }
+
+    #[test]
+    fn separators_and_reordering() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a");
+        let b = dir.path().join("b");
+        fs::create_dir_all(&a).unwrap();
+        fs::create_dir_all(&b).unwrap();
+        let mut s = session(dir.path());
+        s.navigate(&a).unwrap();
+        s.add_bookmark();
+        s.navigate(&b).unwrap();
+        s.add_bookmark();
+
+        s.insert_separator(1);
+        assert!(s.bookmarks()[1].is_separator());
+        assert_eq!(s.bookmarks().len(), 3);
+
+        // Move the last bookmark to the front.
+        s.reorder_bookmark(2, 0);
+        assert_eq!(s.bookmarks()[0].path, b);
+        assert!(s.bookmarks()[2].is_separator() || s.bookmarks()[1].is_separator());
+        let value: serde_json::Value =
+            serde_json::from_str(&sidebar_json(&s.places(), &[], s.bookmarks())).unwrap();
+        assert!(
+            value
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|item| item["kind"] == "separator")
+        );
+    }
+
+    #[test]
+    fn missing_local_bookmarks_are_marked_unavailable() {
+        let dir = tempfile::tempdir().unwrap();
+        let gone = dir.path().join("gone");
+        let list = vec![
+            Bookmark::new(dir.path().to_path_buf()),
+            Bookmark::new(gone),
+            Bookmark::new(PathBuf::from("smb://server/share")),
+        ];
+        let value: serde_json::Value =
+            serde_json::from_str(&sidebar_json(&[], &[], &list)).unwrap();
+        // The first sidebar item is the "Bookmarks" heading, so pick out the bookmarks.
+        let items: Vec<&serde_json::Value> = value
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|item| item["kind"] == "bookmark")
+            .collect();
+        assert_eq!(items[0]["available"], true);
+        assert_eq!(items[1]["available"], false);
+        assert_eq!(
+            items[2]["available"], true,
+            "remote locations are not checked"
+        );
+    }
+
+    #[test]
+    fn imports_add_only_new_folders() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = session(dir.path());
+        s.navigate(dir.path()).unwrap();
+        s.add_bookmark();
+        let incoming = vec![
+            Bookmark::new(dir.path().to_path_buf()),
+            Bookmark::new(PathBuf::from("/elsewhere")),
+        ];
+        assert_eq!(s.import_bookmarks(incoming), 1);
+        assert_eq!(s.bookmarks().len(), 2);
     }
 
     #[test]
