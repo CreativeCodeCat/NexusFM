@@ -41,6 +41,8 @@ pub mod qobject {
         #[qproperty(i32, view_mode, cxx_name = "viewMode")]
         #[qproperty(QString, properties_json, cxx_name = "propertiesJson")]
         #[qproperty(QString, window_state_json, cxx_name = "windowStateJson")]
+        #[qproperty(QString, tabs_json, cxx_name = "tabsJson")]
+        #[qproperty(i32, active_tab, cxx_name = "activeTab")]
         type Backend = super::BackendRust;
 
         /// Opens the initial folder: `path` if given, otherwise the home folder.
@@ -110,6 +112,24 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "saveWindowState"]
         fn save_window_state(self: Pin<&mut Backend>, json: &QString);
+
+        /// Opens a new tab showing the current folder.
+        #[qinvokable]
+        #[cxx_name = "newTab"]
+        fn new_tab(self: Pin<&mut Backend>);
+
+        /// Opens a folder in a new tab.
+        #[qinvokable]
+        #[cxx_name = "openInNewTab"]
+        fn open_in_new_tab(self: Pin<&mut Backend>, path: &QString);
+
+        #[qinvokable]
+        #[cxx_name = "closeTab"]
+        fn close_tab(self: Pin<&mut Backend>, index: i32);
+
+        #[qinvokable]
+        #[cxx_name = "switchTab"]
+        fn switch_tab(self: Pin<&mut Backend>, index: i32);
 
         /// Opens a device: mounts it first if needed, then shows its root.
         #[qinvokable]
@@ -181,6 +201,8 @@ pub struct BackendRust {
     view_mode: i32,
     properties_json: QString,
     window_state_json: QString,
+    tabs_json: QString,
+    active_tab: i32,
     session: Session,
     watcher: Option<nexusfm_filesystem::DirectoryWatcher>,
     devices: Vec<nexusfm_filesystem::Device>,
@@ -213,6 +235,8 @@ impl Default for BackendRust {
             window_state_json: QString::from(
                 nexusfm_config::WindowState::default().to_json().as_str(),
             ),
+            tabs_json: QString::from("[]"),
+            active_tab: 0,
             session,
             watcher: None,
             devices: Vec::new(),
@@ -304,6 +328,12 @@ impl qobject::Backend {
         self.as_mut().set_descending(order.descending);
         let view = self.as_mut().with_session(|s| s.view_mode());
         self.as_mut().set_view_mode(view_mode_to_i32(view));
+        let (tabs, active) = self
+            .as_mut()
+            .with_session(|s| (s.tabs_json(), s.active_tab()));
+        self.as_mut().set_tabs_json(to_qstring(&tabs));
+        self.as_mut()
+            .set_active_tab(i32::try_from(active).unwrap_or(0));
     }
 
     /// Shows a folder's contents, or the error if it could not be read.
@@ -508,6 +538,36 @@ impl qobject::Backend {
         if let Err(err) = state.save_user(xdg.as_deref(), home.as_deref()) {
             eprintln!("nexusfm: cannot save window layout: {err}");
         }
+    }
+
+    pub fn new_tab(mut self: Pin<&mut Self>) {
+        let result = self.as_mut().with_session(|s| s.new_tab());
+        self.show_listing(result);
+    }
+
+    pub fn open_in_new_tab(mut self: Pin<&mut Self>, path: &QString) {
+        let path = PathBuf::from(String::from(path));
+        let result = self.as_mut().with_session(|s| s.open_in_new_tab(&path));
+        self.show_listing(result);
+    }
+
+    pub fn close_tab(mut self: Pin<&mut Self>, index: i32) {
+        let Ok(index) = usize::try_from(index) else {
+            return;
+        };
+        let result = self.as_mut().with_session(|s| s.close_tab(index));
+        // Closing the last tab is refused quietly; there is nothing to report.
+        if result.is_ok() {
+            self.show_listing(result);
+        }
+    }
+
+    pub fn switch_tab(mut self: Pin<&mut Self>, index: i32) {
+        let Ok(index) = usize::try_from(index) else {
+            return;
+        };
+        let result = self.as_mut().with_session(|s| s.switch_tab(index));
+        self.show_listing(result);
     }
 
     /// Checks for mounted and unmounted devices, and updates the sidebar if any changed.

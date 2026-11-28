@@ -127,10 +127,10 @@ Items are grouped by subsystem and roughly ordered by implementation dependencie
 - [x] Parent directory navigation
 - [ ] Breadcrumb navigation
 - [x] Editable location entry
-- [ ] Tabs
+- [x] Tabs
 - [ ] Tab duplication
 - [ ] Tab reordering
-- [ ] Tab closing
+- [x] Tab closing
 - [ ] Restore previously open tabs
 - [ ] Tab context menus
 - [ ] Split-pane browsing
@@ -620,15 +620,15 @@ Items are grouped by subsystem and roughly ordered by implementation dependencie
 
 ### Phase 2 — Everyday File Management
 
-- [ ] Tabs
+- [x] Tabs
 - [ ] Split-pane browsing
-- [ ] Back/forward navigation history
-- [ ] Context menus
-- [ ] File properties
+- [x] Back/forward navigation history
+- [x] Context menus
+- [x] File properties
 - [ ] Bookmarks
 - [ ] Drag and drop
 - [ ] Thumbnails
-- [ ] Hidden files
+- [x] Hidden files
 - [ ] Keyboard shortcuts
 - [ ] Configuration and preferences
 
