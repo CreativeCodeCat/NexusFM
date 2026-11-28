@@ -42,6 +42,8 @@ ApplicationWindow {
     property var places: []
     // Split view: a second pane beside the first.
     property bool splitView: false
+    // True while an item from this window is being dragged, so a drop moves it.
+    property bool internalDrag: false
     // The pane that shared actions act on: its entries, selection and backend.
     property var focusedPane: leftPane
     readonly property var focusedBackend: focusedPane.paneBackend
@@ -65,6 +67,29 @@ ApplicationWindow {
     property int sidebarWidth: 180
     property bool toolbarVisible: true
     property bool statusBarVisible: true
+
+    // file:// URIs to paths, and back. Other URIs (smb://, trash:///) stay as they are.
+    function uriToPath(text) {
+        if (text.indexOf("file://") === 0)
+            return decodeURIComponent(text.substring(7));
+        return text;
+    }
+
+    function pathToUri(path) {
+        if (path.indexOf("://") > 0)
+            return path;
+        return "file://" + path.split("/").map(encodeURIComponent).join("/");
+    }
+
+    // Folders dropped on the sidebar are bookmarked; other items are ignored.
+    function bookmarkDropped(drop) {
+        if (!drop.hasUrls)
+            return;
+        Array.from(drop.urls).forEach(function (url) {
+            backend.addBookmarkPath(uriToPath(String(url)));
+        });
+        drop.accept(Qt.CopyAction);
+    }
 
     function focusPane(pane) {
         focusedPane = pane;
@@ -583,56 +608,67 @@ ApplicationWindow {
             Layout.fillHeight: true
             spacing: 0
 
-            ListView {
-                id: sidebar
+            Item {
+                id: sidebarBox
                 Layout.preferredWidth: window.sidebarVisible ? window.sidebarWidth : 0
                 Layout.fillHeight: true
                 visible: window.sidebarVisible
-                clip: true
-                model: window.places
-                ScrollBar.vertical: ScrollBar {}
 
-                delegate: Item {
-                    required property var modelData
-                    width: sidebar.width
-                    height: 30
+                ListView {
+                    id: sidebar
+                anchors.fill: parent
+                    clip: true
+                    model: window.places
+                    ScrollBar.vertical: ScrollBar {}
 
-                    Label {
-                        visible: modelData.kind === "header"
-                        anchors.verticalCenter: parent.verticalCenter
-                        anchors.left: parent.left
-                        anchors.leftMargin: 12
-                        text: modelData.label
-                        font.bold: true
-                        color: window.palette.placeholderText
-                    }
+                    delegate: Item {
+                        required property var modelData
+                        width: sidebar.width
+                        height: 30
 
-                    ItemDelegate {
-                        visible: modelData.kind !== "header"
-                        anchors.fill: parent
-                        text: modelData.kind === "device" ? modelData.label + window.capacityText(modelData) : modelData.label
-                        highlighted: modelData.kind !== "device" && backend.currentPath === modelData.path
-                        onClicked: modelData.kind === "device" ? backend.openDevice(modelData.key) : window.focusedBackend.navigate(modelData.path)
-                    }
+                        Label {
+                            visible: modelData.kind === "header"
+                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.left: parent.left
+                            anchors.leftMargin: 12
+                            text: modelData.label
+                            font.bold: true
+                            color: window.palette.placeholderText
+                        }
 
-                    // Right-click on a bookmark or device opens its menu; left clicks pass through.
-                    MouseArea {
-                        anchors.fill: parent
-                        enabled: modelData.kind === "bookmark" || modelData.kind === "device"
-                        acceptedButtons: Qt.RightButton
-                        onClicked: {
-                            if (modelData.kind === "device") {
-                                window.deviceKey = modelData.key;
-                                window.deviceMounted = modelData.mounted;
-                                window.deviceCanUnmount = modelData.canUnmount;
-                                deviceMenu.popup();
-                                return;
+                        ItemDelegate {
+                            visible: modelData.kind !== "header"
+                            anchors.fill: parent
+                            text: modelData.kind === "device" ? modelData.label + window.capacityText(modelData) : modelData.label
+                            highlighted: modelData.kind !== "device" && backend.currentPath === modelData.path
+                            onClicked: modelData.kind === "device" ? backend.openDevice(modelData.key) : window.focusedBackend.navigate(modelData.path)
+                        }
+
+                        // Right-click on a bookmark or device opens its menu; left clicks pass through.
+                        MouseArea {
+                            anchors.fill: parent
+                            enabled: modelData.kind === "bookmark" || modelData.kind === "device"
+                            acceptedButtons: Qt.RightButton
+                            onClicked: {
+                                if (modelData.kind === "device") {
+                                    window.deviceKey = modelData.key;
+                                    window.deviceMounted = modelData.mounted;
+                                    window.deviceCanUnmount = modelData.canUnmount;
+                                    deviceMenu.popup();
+                                    return;
+                                }
+                                window.bookmarkIndex = modelData.index;
+                                window.bookmarkName = modelData.label;
+                                bookmarkMenu.popup();
                             }
-                            window.bookmarkIndex = modelData.index;
-                            window.bookmarkName = modelData.label;
-                            bookmarkMenu.popup();
                         }
                     }
+                }
+
+                // Folders dropped on the sidebar become bookmarks.
+                DropArea {
+                    anchors.fill: parent
+                    onDropped: function (drop) { window.bookmarkDropped(drop); }
                 }
             }
 

@@ -137,7 +137,7 @@ Items are grouped by subsystem and roughly ordered by implementation dependencie
 - [x] Independent navigation history per pane
 - [x] Independent view modes per pane
 - [ ] Synchronised scrolling where appropriate
-- [ ] Drag and drop between panes
+- [x] Drag and drop between panes
 - [ ] Keyboard shortcuts for common actions
 - [ ] Type-to-select / incremental search
 - [ ] Recursive search
@@ -183,7 +183,7 @@ Items are grouped by subsystem and roughly ordered by implementation dependencie
 - [x] Rename bookmarks
 - [x] Bookmark context menus
 - [x] Bookmark persistence
-- [ ] Drag directories into the sidebar to create bookmarks
+- [x] Drag directories into the sidebar to create bookmarks
 - [ ] Bookmark separators
 - [ ] Bookmark icons
 
@@ -268,7 +268,7 @@ Items are grouped by subsystem and roughly ordered by implementation dependencie
 - [ ] Create hard link where supported
 - [ ] Copy and move between tabs
 - [x] Copy and move between split panes
-- [ ] Drag-and-drop file operations
+- [x] Drag-and-drop file operations
 
 ### Advanced Operations
 
@@ -626,7 +626,7 @@ Items are grouped by subsystem and roughly ordered by implementation dependencie
 - [x] Context menus
 - [x] File properties
 - [ ] Bookmarks
-- [ ] Drag and drop
+- [x] Drag and drop
 - [ ] Thumbnails
 - [x] Hidden files
 - [ ] Keyboard shortcuts
