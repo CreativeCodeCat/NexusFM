@@ -40,6 +40,7 @@ pub mod qobject {
         #[qproperty(bool, can_paste, cxx_name = "canPaste")]
         #[qproperty(i32, view_mode, cxx_name = "viewMode")]
         #[qproperty(QString, properties_json, cxx_name = "propertiesJson")]
+        #[qproperty(QString, window_state_json, cxx_name = "windowStateJson")]
         type Backend = super::BackendRust;
 
         /// Opens the initial folder: `path` if given, otherwise the home folder.
@@ -105,6 +106,11 @@ pub mod qobject {
         #[cxx_name = "moveBookmark"]
         fn move_bookmark(self: Pin<&mut Backend>, index: i32, delta: i32);
 
+        /// Saves the window layout (size, sidebar, toolbar, status bar).
+        #[qinvokable]
+        #[cxx_name = "saveWindowState"]
+        fn save_window_state(self: Pin<&mut Backend>, json: &QString);
+
         /// Reloads the folder if it changed on disk since the last check.
         #[qinvokable]
         #[cxx_name = "checkForChanges"]
@@ -161,6 +167,7 @@ pub struct BackendRust {
     can_paste: bool,
     view_mode: i32,
     properties_json: QString,
+    window_state_json: QString,
     session: Session,
     watcher: Option<nexusfm_filesystem::DirectoryWatcher>,
 }
@@ -189,6 +196,9 @@ impl Default for BackendRust {
             can_paste: false,
             view_mode: view_mode_to_i32(session.view_mode()),
             properties_json: QString::from("{}"),
+            window_state_json: QString::from(
+                nexusfm_config::WindowState::default().to_json().as_str(),
+            ),
             session,
             watcher: None,
         }
@@ -410,6 +420,12 @@ impl qobject::Backend {
         self.as_mut()
             .with_session(|s| s.set_bookmarks(bookmarks.unwrap_or_default()));
         self.as_mut().refresh_sidebar();
+        let layout = nexusfm_config::WindowState::load_user(
+            std::env::var_os("XDG_STATE_HOME").as_deref(),
+            std::env::var_os("HOME").as_deref(),
+        );
+        self.as_mut()
+            .set_window_state_json(to_qstring(&layout.to_json()));
 
         let result = self.as_mut().with_session(|s| s.navigate(&target));
         self.show_listing(result);
@@ -465,6 +481,15 @@ impl qobject::Backend {
         match nexusfm_session::inspect(&path) {
             Ok(json) => self.as_mut().set_properties_json(to_qstring(&json)),
             Err(message) => self.as_mut().set_error_text(to_qstring(&message)),
+        }
+    }
+
+    pub fn save_window_state(self: Pin<&mut Self>, json: &QString) {
+        let state = nexusfm_config::WindowState::from_json(&String::from(json));
+        let xdg = std::env::var_os("XDG_STATE_HOME");
+        let home = std::env::var_os("HOME");
+        if let Err(err) = state.save_user(xdg.as_deref(), home.as_deref()) {
+            eprintln!("nexusfm: cannot save window layout: {err}");
         }
     }
 

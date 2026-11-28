@@ -16,7 +16,7 @@ ApplicationWindow {
     minimumWidth: 480
     minimumHeight: 320
     visible: true
-    title: qsTr("NexusFM")
+    title: folderName() ? qsTr("%1 - NexusFM").arg(folderName()) : qsTr("NexusFM")
     flags: Qt.Window | Qt.FramelessWindowHint
     color: palette.window
 
@@ -49,9 +49,60 @@ ApplicationWindow {
 
     readonly property var columnWidths: ({ name: 0, size: 110, type: 90, modified: 170 })
 
+    // Layout, remembered between runs (see WindowState in the config crate).
+    property bool sidebarVisible: true
+    property int sidebarWidth: 180
+    property bool toolbarVisible: true
+    property bool statusBarVisible: true
+
+    function folderName() {
+        const path = backend.currentPath.replace(/\/+$/, "");
+        if (path.length === 0)
+            return "";
+        const name = path.substring(path.lastIndexOf("/") + 1);
+        return name.length > 0 ? name : "/";
+    }
+
+    function applyLayout(json) {
+        const layout = JSON.parse(json);
+        window.width = layout.width;
+        window.height = layout.height;
+        window.sidebarVisible = layout.sidebar_visible;
+        window.sidebarWidth = layout.sidebar_width;
+        window.toolbarVisible = layout.toolbar_visible;
+        window.statusBarVisible = layout.status_bar_visible;
+    }
+
+    function saveLayout() {
+        backend.saveWindowState(JSON.stringify({
+            width: window.width,
+            height: window.height,
+            sidebar_visible: window.sidebarVisible,
+            sidebar_width: window.sidebarWidth,
+            toolbar_visible: window.toolbarVisible,
+            status_bar_visible: window.statusBarVisible
+        }));
+    }
+
+    // Save shortly after the layout changes, so it survives however the window is closed.
+    Timer {
+        id: layoutSaveTimer
+        interval: 500
+        onTriggered: window.saveLayout()
+    }
+    onWidthChanged: layoutSaveTimer.restart()
+    onHeightChanged: layoutSaveTimer.restart()
+    onSidebarVisibleChanged: layoutSaveTimer.restart()
+    onSidebarWidthChanged: layoutSaveTimer.restart()
+    onToolbarVisibleChanged: layoutSaveTimer.restart()
+    onStatusBarVisibleChanged: layoutSaveTimer.restart()
+
+    onClosing: saveLayout()
+
     Component.onCompleted: {
         const args = Qt.application.arguments;
         backend.start(args.length > 1 ? args[1] : "");
+        window.applyLayout(backend.windowStateJson);
     }
 
     Connections {
@@ -234,6 +285,28 @@ ApplicationWindow {
         onTriggered: backend.moveToTrash(JSON.stringify(window.selectedPaths()))
     }
     Action {
+        id: sidebarAction
+        text: qsTr("Show Sidebar")
+        shortcut: "F9"
+        checkable: true
+        checked: window.sidebarVisible
+        onTriggered: window.sidebarVisible = checked
+    }
+    Action {
+        id: toolbarAction
+        text: qsTr("Show Toolbar")
+        checkable: true
+        checked: window.toolbarVisible
+        onTriggered: window.toolbarVisible = checked
+    }
+    Action {
+        id: statusBarAction
+        text: qsTr("Show Status Bar")
+        checkable: true
+        checked: window.statusBarVisible
+        onTriggered: window.statusBarVisible = checked
+    }
+    Action {
         id: hiddenAction
         text: qsTr("Show Hidden Files")
         shortcut: "Ctrl+H"
@@ -363,6 +436,10 @@ ApplicationWindow {
                     MenuItem { action: compactAction }
                     MenuItem { action: iconAction }
                     MenuSeparator {}
+                    MenuItem { action: sidebarAction }
+                    MenuItem { action: toolbarAction }
+                    MenuItem { action: statusBarAction }
+                    MenuSeparator {}
                     MenuItem { action: hiddenAction }
                     MenuSeparator {}
                     MenuItem { action: reloadAction }
@@ -428,6 +505,7 @@ ApplicationWindow {
             Layout.fillWidth: true
             Layout.margins: 4
             spacing: 4
+            visible: window.toolbarVisible
 
             ToolButton { action: backAction; text: "←"; display: AbstractButton.TextOnly }
             ToolButton { action: forwardAction; text: "→"; display: AbstractButton.TextOnly }
@@ -447,14 +525,16 @@ ApplicationWindow {
         // ---- Sidebar and file list ----------------------------------------
 
         RowLayout {
+            id: sidebarRow
             Layout.fillWidth: true
             Layout.fillHeight: true
             spacing: 0
 
             ListView {
                 id: sidebar
-                Layout.preferredWidth: 180
+                Layout.preferredWidth: window.sidebarVisible ? window.sidebarWidth : 0
                 Layout.fillHeight: true
+                visible: window.sidebarVisible
                 clip: true
                 model: window.places
                 ScrollBar.vertical: ScrollBar {}
@@ -496,10 +576,26 @@ ApplicationWindow {
                 }
             }
 
+            // Divider between the sidebar and the file list; drag it to resize the sidebar.
             Rectangle {
-                Layout.preferredWidth: 1
+                id: divider
+                Layout.preferredWidth: window.sidebarVisible ? 1 : 0
                 Layout.fillHeight: true
+                visible: window.sidebarVisible
                 color: window.palette.mid
+
+                MouseArea {
+                    anchors.fill: parent
+                    anchors.leftMargin: -3
+                    anchors.rightMargin: -3
+                    cursorShape: Qt.SplitHCursor
+                    onPositionChanged: function (mouse) {
+                        if (pressed) {
+                            const x = mapToItem(sidebarRow, mouse.x, 0).x;
+                            window.sidebarWidth = Math.max(100, Math.min(400, Math.round(x)));
+                        }
+                    }
+                }
             }
 
             ColumnLayout {
@@ -728,6 +824,7 @@ ApplicationWindow {
             Layout.fillWidth: true
             Layout.leftMargin: 8
             Layout.bottomMargin: 2
+            visible: window.statusBarVisible
             text: backend.statusText
             color: window.palette.placeholderText
         }
