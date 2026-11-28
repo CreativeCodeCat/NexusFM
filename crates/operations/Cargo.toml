@@ -7,7 +7,7 @@ license.workspace = true
 
 [dependencies]
 thiserror.workspace = true
-trash = "5"
+gio = "0.22"
 nexusfm-core = { path = "../core" }
 
 [dev-dependencies]

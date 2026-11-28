@@ -14,7 +14,7 @@ Items are grouped by subsystem and roughly ordered by implementation dependencie
 - [x] Shared error types and user-facing error reporting across crates
 - [x] Configuration loading from TOML using XDG config directories
 - [x] Logging and diagnostics using `tracing`
-- [ ] Replace `std::fs` backend with GIO/GVFS
+- [x] Replace `std::fs` backend with GIO/GVFS
 - [x] Preserve `list_directory` as the filesystem abstraction boundary
 - [x] Filesystem metadata abstraction
 - [x] MIME type detection
@@ -25,7 +25,7 @@ Items are grouped by subsystem and roughly ordered by implementation dependencie
 - [x] Hidden file handling
 - [x] Permissions and ownership metadata
 - [x] URI-based location abstraction
-- [ ] Support local, remote and virtual filesystem locations
+- [x] Support local, remote and virtual filesystem locations
 
 ## 2. Qt Quick (QML) Frontend
 

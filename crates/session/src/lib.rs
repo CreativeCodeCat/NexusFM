@@ -261,7 +261,6 @@ impl Session {
     /// Creates a folder in the current folder.
     pub fn create_folder(&self, name: &str) -> Result<(), String> {
         let parent = self.require_current()?;
-        reject_remote(parent)?;
         ops::create_directory(parent, name)
             .map(|_| ())
             .map_err(|err| err.to_string())
@@ -269,7 +268,6 @@ impl Session {
 
     /// Renames `path` within its folder.
     pub fn rename(&self, path: &Path, new_name: &str) -> Result<(), String> {
-        reject_remote(path)?;
         ops::rename(path, new_name)
             .map(|_| ())
             .map_err(|err| err.to_string())
@@ -279,11 +277,7 @@ impl Session {
     pub fn trash(&self, paths: &[PathBuf]) -> Vec<String> {
         paths
             .iter()
-            .filter_map(|path| {
-                reject_remote(path)
-                    .err()
-                    .or_else(|| ops::move_to_trash(path).err().map(|err| err.to_string()))
-            })
+            .filter_map(|path| ops::move_to_trash(path).err().map(|err| err.to_string()))
             .collect()
     }
 
@@ -301,9 +295,6 @@ impl Session {
         let Ok(dest) = self.require_current().map(Path::to_path_buf) else {
             return vec!["No folder is open".into()];
         };
-        if let Err(message) = reject_remote(&dest) {
-            return vec![message];
-        }
 
         let cut = self.clipboard_is_cut;
         let mut errors = Vec::new();
@@ -376,18 +367,6 @@ fn clean(path: &Path) -> PathBuf {
         return path.to_path_buf();
     }
     path.components().collect()
-}
-
-/// File operations work on local files only for now.
-fn reject_remote(path: &Path) -> Result<(), String> {
-    if is_uri(path) {
-        Err(format!(
-            "File operations on {} are not supported yet",
-            path.display()
-        ))
-    } else {
-        Ok(())
-    }
 }
 
 /// Reads `user-dirs.dirs` into `(KEY, path)` pairs, expanding `$HOME`.
@@ -584,12 +563,18 @@ mod tests {
     }
 
     #[test]
-    fn file_operations_are_refused_on_remote_locations() {
+    fn file_operations_accept_uris() {
         let dir = tempfile::tempdir().unwrap();
+        let original = dir.path().join("a.txt");
+        fs::write(&original, b"x").unwrap();
+        let uri = PathBuf::from(format!(
+            "file://{}",
+            nexusfm_core::location::encode(&original.to_string_lossy())
+        ));
         let s = session(dir.path());
-        let remote = PathBuf::from("smb://server/share/a.txt");
-        assert!(s.rename(&remote, "b.txt").is_err());
-        assert_eq!(s.trash(std::slice::from_ref(&remote)).len(), 1);
+        s.rename(&uri, "b.txt").unwrap();
+        assert!(dir.path().join("b.txt").exists());
+        assert!(!original.exists());
     }
 
     #[test]

@@ -9,17 +9,15 @@
 //! is an error, so the caller decides what to do. Symbolic links are copied as
 //! links, not followed.
 
-use std::fs;
-use std::io;
 use std::path::{Path, PathBuf};
 
+use gio::prelude::*;
 use nexusfm_core::NexusError as OperationError;
 
 pub type Result<T> = nexusfm_core::Result<T>;
 
-fn io_error(path: &Path) -> impl FnOnce(io::Error) -> OperationError + '_ {
-    move |source| OperationError::io(path, source)
-}
+/// Attributes read when deciding what kind of object a source is.
+const TYPE_ATTRIBUTES: &str = "standard::type";
 
 /// Checks that `name` can be used as a single file name in a directory.
 pub fn validate_name(name: &str) -> Result<()> {
@@ -32,168 +30,206 @@ pub fn validate_name(name: &str) -> Result<()> {
     }
 }
 
-/// Creates a folder called `name` inside `parent`.
+/// Creates a folder called `name` inside `parent`. `parent` may be a local
+/// path or a URI.
 pub fn create_directory(parent: &Path, name: &str) -> Result<PathBuf> {
     validate_name(name)?;
-    let path = parent.join(name);
-    fs::create_dir(&path).map_err(|err| match err.kind() {
-        io::ErrorKind::AlreadyExists => OperationError::AlreadyExists(path.clone()),
-        _ => io_error(&path)(err),
-    })?;
-    Ok(path)
+    let target = file(parent).child(name);
+    target
+        .make_directory(None::<&gio::Cancellable>)
+        .map_err(|err| glib_error(&location_of(&target), err))?;
+    Ok(location_of(&target))
 }
 
 /// Creates an empty file called `name` inside `parent`.
 pub fn create_empty_file(parent: &Path, name: &str) -> Result<PathBuf> {
     validate_name(name)?;
-    let path = parent.join(name);
-    fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&path)
-        .map_err(|err| match err.kind() {
-            io::ErrorKind::AlreadyExists => OperationError::AlreadyExists(path.clone()),
-            _ => io_error(&path)(err),
-        })?;
-    Ok(path)
+    let target = file(parent).child(name);
+    let stream = target
+        .create(gio::FileCreateFlags::NONE, None::<&gio::Cancellable>)
+        .map_err(|err| glib_error(&location_of(&target), err))?;
+    let _ = stream.close(None::<&gio::Cancellable>);
+    Ok(location_of(&target))
 }
 
-/// Renames `path` to `new_name` in the same directory.
+/// Renames `path` to `new_name` in the same folder.
 pub fn rename(path: &Path, new_name: &str) -> Result<PathBuf> {
     validate_name(new_name)?;
-    if !exists(path) {
+    let source = file(path);
+    if !source.query_exists(None::<&gio::Cancellable>) {
         return Err(OperationError::NotFound(path.to_path_buf()));
     }
-    let parent = path.parent().unwrap_or_else(|| Path::new("/"));
-    let target = parent.join(new_name);
-    if target == path {
-        return Ok(target);
+    let Some(parent) = source.parent() else {
+        return Err(OperationError::InvalidName(new_name.to_string()));
+    };
+    let target = parent.child(new_name);
+    if location_of(&target) == path {
+        return Ok(location_of(&target));
     }
-    if exists(&target) {
-        return Err(OperationError::AlreadyExists(target));
+    if target.query_exists(None::<&gio::Cancellable>) {
+        return Err(OperationError::AlreadyExists(location_of(&target)));
     }
-    fs::rename(path, &target).map_err(io_error(path))?;
-    Ok(target)
+    source
+        .move_(
+            &target,
+            gio::FileCopyFlags::NOFOLLOW_SYMLINKS,
+            None::<&gio::Cancellable>,
+            None::<&mut dyn FnMut(i64, i64)>,
+        )
+        .map_err(|err| glib_error(path, err))?;
+    Ok(location_of(&target))
 }
 
-/// Copies `src` into the directory `dest_dir`, keeping its name. Folders are
-/// copied recursively.
+/// Copies `src` into the folder `dest_dir`, keeping its name. Folders are
+/// copied recursively. Symbolic links are copied as links.
 pub fn copy(src: &Path, dest_dir: &Path) -> Result<PathBuf> {
-    let target = destination_for(src, dest_dir)?;
-    copy_tree(src, &target)?;
-    Ok(target)
+    let (source, target) = destination_for(src, dest_dir)?;
+    copy_tree(&source, &target)?;
+    Ok(location_of(&target))
 }
 
-/// Moves `src` into the directory `dest_dir`, keeping its name. Falls back to
+/// Moves `src` into the folder `dest_dir`, keeping its name. GIO falls back to
 /// copy-then-delete when the move crosses filesystems.
 pub fn move_into(src: &Path, dest_dir: &Path) -> Result<PathBuf> {
-    let target = destination_for(src, dest_dir)?;
-    match fs::rename(src, &target) {
-        Ok(()) => Ok(target),
-        Err(err) if err.kind() == io::ErrorKind::CrossesDevices => {
-            copy_tree(src, &target)?;
-            remove_tree(src)?;
-            Ok(target)
-        }
-        Err(err) => Err(io_error(src)(err)),
-    }
+    let (source, target) = destination_for(src, dest_dir)?;
+    source
+        .move_(
+            &target,
+            gio::FileCopyFlags::NOFOLLOW_SYMLINKS,
+            None::<&gio::Cancellable>,
+            None::<&mut dyn FnMut(i64, i64)>,
+        )
+        .map_err(|err| glib_error(src, err))?;
+    Ok(location_of(&target))
 }
 
 /// Moves `path` to the desktop trash.
 pub fn move_to_trash(path: &Path) -> Result<()> {
-    if !exists(path) {
+    let target = file(path);
+    if !target.query_exists(None::<&gio::Cancellable>) {
         return Err(OperationError::NotFound(path.to_path_buf()));
     }
-    trash::delete(path).map_err(|err| OperationError::Trash {
-        path: path.to_path_buf(),
-        reason: err.to_string(),
-    })
+    target
+        .trash(None::<&gio::Cancellable>)
+        .map_err(|err| OperationError::Trash {
+            path: path.to_path_buf(),
+            reason: err.message().to_string(),
+        })
 }
 
-/// Checks that `src` can go into `dest_dir` and returns the target path.
-fn destination_for(src: &Path, dest_dir: &Path) -> Result<PathBuf> {
-    if !exists(src) {
+/// A GIO handle for a local path or a URI.
+fn file(path: &Path) -> gio::File {
+    if nexusfm_core::location::is_uri(&path.to_string_lossy()) {
+        gio::File::for_uri(&path.to_string_lossy())
+    } else {
+        gio::File::for_path(path)
+    }
+}
+
+/// The path or URI to show for a GIO file.
+fn location_of(file: &gio::File) -> PathBuf {
+    file.path()
+        .unwrap_or_else(|| PathBuf::from(file.uri().as_str()))
+}
+
+/// Turns a GIO error into the matching NexusFM error for `path`.
+fn glib_error(path: &Path, err: gio::glib::Error) -> OperationError {
+    if err.matches(gio::IOErrorEnum::Exists) {
+        OperationError::AlreadyExists(path.to_path_buf())
+    } else if err.matches(gio::IOErrorEnum::NotFound) {
+        OperationError::NotFound(path.to_path_buf())
+    } else {
+        OperationError::Message(format!("{}: {}", path.display(), err.message()))
+    }
+}
+
+/// Checks that `src` can go into `dest_dir` and returns the source and target files.
+fn destination_for(src: &Path, dest_dir: &Path) -> Result<(gio::File, gio::File)> {
+    let source = file(src);
+    if !source.query_exists(None::<&gio::Cancellable>) {
         return Err(OperationError::NotFound(src.to_path_buf()));
     }
-    if !dest_dir.is_dir() {
+    let folder = file(dest_dir);
+    let is_folder = folder.query_file_type(
+        gio::FileQueryInfoFlags::NOFOLLOW_SYMLINKS,
+        None::<&gio::Cancellable>,
+    ) == gio::FileType::Directory;
+    if !is_folder {
         return Err(OperationError::NotFound(dest_dir.to_path_buf()));
     }
-    let name = src
-        .file_name()
+    let name = source
+        .basename()
         .ok_or_else(|| OperationError::InvalidName(src.display().to_string()))?;
 
-    let src_meta = fs::symlink_metadata(src).map_err(io_error(src))?;
-    if src_meta.is_dir() {
-        let canonical_src = src.canonicalize().map_err(io_error(src))?;
-        let canonical_dest = dest_dir.canonicalize().map_err(io_error(dest_dir))?;
-        if canonical_dest.starts_with(&canonical_src) {
-            return Err(OperationError::IntoItself(src.to_path_buf()));
-        }
+    let is_dir = source.query_file_type(
+        gio::FileQueryInfoFlags::NOFOLLOW_SYMLINKS,
+        None::<&gio::Cancellable>,
+    ) == gio::FileType::Directory;
+    if is_dir && is_inside(dest_dir, src) {
+        return Err(OperationError::IntoItself(src.to_path_buf()));
     }
 
-    let target = dest_dir.join(name);
-    if exists(&target) {
-        return Err(OperationError::AlreadyExists(target));
+    let target = folder.child(name);
+    if target.query_exists(None::<&gio::Cancellable>) {
+        return Err(OperationError::AlreadyExists(location_of(&target)));
     }
-    Ok(target)
+    Ok((source, target))
 }
 
-fn exists(path: &Path) -> bool {
-    fs::symlink_metadata(path).is_ok()
+/// Whether `dest` is `src` or lies inside it. Local paths are compared after
+/// resolving links; URIs are compared as written.
+fn is_inside(dest: &Path, src: &Path) -> bool {
+    if nexusfm_core::location::is_uri(&src.to_string_lossy()) {
+        return dest.starts_with(src);
+    }
+    match (src.canonicalize(), dest.canonicalize()) {
+        (Ok(src), Ok(dest)) => dest.starts_with(src),
+        _ => false,
+    }
 }
 
-fn copy_tree(src: &Path, dest: &Path) -> Result<()> {
-    let meta = fs::symlink_metadata(src).map_err(io_error(src))?;
-    let file_type = meta.file_type();
+/// Copies a file, symbolic link or folder tree from `src` to `dest`, which must not exist.
+fn copy_tree(src: &gio::File, dest: &gio::File) -> Result<()> {
+    let kind = src
+        .query_info(
+            TYPE_ATTRIBUTES,
+            gio::FileQueryInfoFlags::NOFOLLOW_SYMLINKS,
+            None::<&gio::Cancellable>,
+        )
+        .map_err(|err| glib_error(&location_of(src), err))?
+        .file_type();
 
-    if file_type.is_symlink() {
-        let link = fs::read_link(src).map_err(io_error(src))?;
-        return create_symlink(&link, dest).map_err(io_error(dest));
-    }
-
-    if file_type.is_dir() {
-        fs::create_dir(dest).map_err(io_error(dest))?;
-        for item in fs::read_dir(src).map_err(io_error(src))? {
-            let item = item.map_err(io_error(src))?;
-            copy_tree(&item.path(), &dest.join(item.file_name()))?;
+    if kind == gio::FileType::Directory {
+        dest.make_directory(None::<&gio::Cancellable>)
+            .map_err(|err| glib_error(&location_of(dest), err))?;
+        let children = src
+            .enumerate_children(
+                "standard::name",
+                gio::FileQueryInfoFlags::NOFOLLOW_SYMLINKS,
+                None::<&gio::Cancellable>,
+            )
+            .map_err(|err| glib_error(&location_of(src), err))?;
+        for child in children {
+            let child = child.map_err(|err| glib_error(&location_of(src), err))?;
+            let name = child.name();
+            copy_tree(&src.child(&name), &dest.child(&name))?;
         }
-        fs::set_permissions(dest, meta.permissions()).map_err(io_error(dest))?;
         return Ok(());
     }
 
-    fs::copy(src, dest).map_err(io_error(src))?;
-    Ok(())
-}
-
-fn remove_tree(path: &Path) -> Result<()> {
-    let meta = fs::symlink_metadata(path).map_err(io_error(path))?;
-    if meta.is_dir() {
-        fs::remove_dir_all(path).map_err(io_error(path))
-    } else {
-        fs::remove_file(path).map_err(io_error(path))
-    }
-}
-
-#[cfg(unix)]
-fn create_symlink(target: &Path, link: &Path) -> io::Result<()> {
-    std::os::unix::fs::symlink(target, link)
-}
-
-#[cfg(not(unix))]
-fn create_symlink(target: &Path, link: &Path) -> io::Result<()> {
-    Err(io::Error::new(
-        io::ErrorKind::Unsupported,
-        format!(
-            "cannot copy link {} -> {}",
-            link.display(),
-            target.display()
-        ),
-    ))
+    src.copy(
+        dest,
+        gio::FileCopyFlags::NOFOLLOW_SYMLINKS,
+        None::<&gio::Cancellable>,
+        None::<&mut dyn FnMut(i64, i64)>,
+    )
+    .map_err(|err| glib_error(&location_of(src), err))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     #[test]
     fn rejects_bad_names() {
