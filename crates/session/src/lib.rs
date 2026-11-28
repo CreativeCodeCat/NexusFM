@@ -36,14 +36,39 @@ pub struct Place {
     pub path: PathBuf,
 }
 
+/// One tab: the folder it shows and its own back and forward history.
+#[derive(Debug, Clone, Default)]
+struct Tab {
+    current: Option<PathBuf>,
+    back: Vec<PathBuf>,
+    forward: Vec<PathBuf>,
+}
+
+impl Tab {
+    /// The name shown on the tab: the folder name, or the whole location for a root.
+    fn title(&self) -> String {
+        let Some(path) = self.current.as_deref() else {
+            return "New Tab".into();
+        };
+        let text = path.to_string_lossy();
+        let trimmed = text.trim_end_matches('/');
+        match trimmed.rsplit_once('/') {
+            Some((_, name)) if !name.is_empty() => name.to_string(),
+            _ if trimmed.is_empty() => "/".into(),
+            _ => text.into_owned(),
+        }
+    }
+}
+
 /// The state of one NexusFM window.
 #[derive(Debug, Clone)]
 pub struct Session {
     home: PathBuf,
     config: Config,
-    current: Option<PathBuf>,
-    back: Vec<PathBuf>,
-    forward: Vec<PathBuf>,
+    /// Open tabs. There is always at least one.
+    tabs: Vec<Tab>,
+    /// Index of the tab on screen.
+    active: usize,
     clipboard: Vec<PathBuf>,
     clipboard_is_cut: bool,
     bookmarks: Vec<Bookmark>,
@@ -55,9 +80,8 @@ impl Session {
         Self {
             home,
             config,
-            current: None,
-            back: Vec::new(),
-            forward: Vec::new(),
+            tabs: vec![Tab::default()],
+            active: 0,
             clipboard: Vec::new(),
             clipboard_is_cut: false,
             bookmarks: Vec::new(),
@@ -77,7 +101,7 @@ impl Session {
     /// Bookmarks the current folder. Returns `false` if it is already bookmarked
     /// or no folder is open.
     pub fn add_bookmark(&mut self) -> bool {
-        let Some(current) = self.current.clone() else {
+        let Some(current) = self.tabs[self.active].current.clone() else {
             return false;
         };
         if self
@@ -121,7 +145,7 @@ impl Session {
     }
 
     pub fn current(&self) -> Option<&Path> {
-        self.current.as_deref()
+        self.tabs[self.active].current.as_deref()
     }
 
     pub fn show_hidden(&self) -> bool {
@@ -146,11 +170,11 @@ impl Session {
     }
 
     pub fn can_go_back(&self) -> bool {
-        !self.back.is_empty()
+        !self.tabs[self.active].back.is_empty()
     }
 
     pub fn can_go_forward(&self) -> bool {
-        !self.forward.is_empty()
+        !self.tabs[self.active].forward.is_empty()
     }
 
     pub fn can_paste(&self) -> bool {
@@ -162,44 +186,112 @@ impl Session {
     pub fn navigate(&mut self, path: &Path) -> Result<Listing, String> {
         let target = clean(path);
         let listing = self.list(&target)?;
-        let previous = self.current.take();
+        let previous = self.tabs[self.active].current.take();
         if previous
             .as_ref()
             .is_some_and(|previous| *previous != target)
         {
-            self.back.extend(previous);
-            self.forward.clear();
+            self.tabs[self.active].back.extend(previous);
+            self.tabs[self.active].forward.clear();
         }
-        self.current = Some(target);
+        self.tabs[self.active].current = Some(target);
         Ok(listing)
     }
 
     /// Returns to the previous folder.
     pub fn go_back(&mut self) -> Result<Listing, String> {
-        let Some(previous) = self.back.last().cloned() else {
+        let Some(previous) = self.tabs[self.active].back.last().cloned() else {
             return Err("There is no earlier folder".into());
         };
         let listing = self.list(&previous)?;
-        self.back.pop();
-        if let Some(current) = self.current.take() {
-            self.forward.push(current);
+        self.tabs[self.active].back.pop();
+        if let Some(current) = self.tabs[self.active].current.take() {
+            self.tabs[self.active].forward.push(current);
         }
-        self.current = Some(previous);
+        self.tabs[self.active].current = Some(previous);
         Ok(listing)
     }
 
     /// Returns to the folder that was left by the last back step.
     pub fn go_forward(&mut self) -> Result<Listing, String> {
-        let Some(next) = self.forward.last().cloned() else {
+        let Some(next) = self.tabs[self.active].forward.last().cloned() else {
             return Err("There is no later folder".into());
         };
         let listing = self.list(&next)?;
-        self.forward.pop();
-        if let Some(current) = self.current.take() {
-            self.back.push(current);
+        self.tabs[self.active].forward.pop();
+        if let Some(current) = self.tabs[self.active].current.take() {
+            self.tabs[self.active].back.push(current);
         }
-        self.current = Some(next);
+        self.tabs[self.active].current = Some(next);
         Ok(listing)
+    }
+
+    /// Number of open tabs.
+    pub fn tab_count(&self) -> usize {
+        self.tabs.len()
+    }
+
+    /// Index of the tab on screen.
+    pub fn active_tab(&self) -> usize {
+        self.active
+    }
+
+    /// The title of each tab, in order.
+    pub fn tab_titles(&self) -> Vec<String> {
+        self.tabs.iter().map(Tab::title).collect()
+    }
+
+    /// The tab titles as a JSON array of strings, for the QML front end.
+    pub fn tabs_json(&self) -> String {
+        serde_json::Value::from(self.tab_titles()).to_string()
+    }
+
+    /// Opens a new tab showing the current folder, and switches to it.
+    pub fn new_tab(&mut self) -> Result<Listing, String> {
+        let folder = self
+            .current()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| self.home.clone());
+        self.open_in_new_tab(&folder)
+    }
+
+    /// Opens `path` in a new tab after the current one, and switches to it.
+    /// If the folder cannot be read, no tab is added.
+    pub fn open_in_new_tab(&mut self, path: &Path) -> Result<Listing, String> {
+        let target = clean(path);
+        let listing = self.list(&target)?;
+        let tab = Tab {
+            current: Some(target),
+            ..Tab::default()
+        };
+        self.active += 1;
+        self.tabs.insert(self.active, tab);
+        Ok(listing)
+    }
+
+    /// Shows the tab at `index`.
+    pub fn switch_tab(&mut self, index: usize) -> Result<Listing, String> {
+        if index >= self.tabs.len() {
+            return Err("There is no such tab".into());
+        }
+        self.active = index;
+        self.reload()
+    }
+
+    /// Closes the tab at `index` and shows its neighbour. The last tab cannot be
+    /// closed; that returns an error.
+    pub fn close_tab(&mut self, index: usize) -> Result<Listing, String> {
+        if self.tabs.len() <= 1 {
+            return Err("The last tab cannot be closed".into());
+        }
+        if index >= self.tabs.len() {
+            return Err("There is no such tab".into());
+        }
+        self.tabs.remove(index);
+        if index < self.active || self.active >= self.tabs.len() {
+            self.active = self.active.saturating_sub(1);
+        }
+        self.reload()
     }
 
     /// Opens a location typed by the user: a path, `~/...`, or a `file://` URI.
@@ -213,7 +305,11 @@ impl Session {
 
     /// Opens the parent of the current folder.
     pub fn go_up(&mut self) -> Result<Listing, String> {
-        let Some(parent) = self.current.as_deref().and_then(parent_location) else {
+        let Some(parent) = self.tabs[self.active]
+            .current
+            .as_deref()
+            .and_then(parent_location)
+        else {
             return Err("This folder has no parent".into());
         };
         self.navigate(&parent)
@@ -221,7 +317,10 @@ impl Session {
 
     /// Reads the current folder again, e.g. after a change on disk.
     pub fn reload(&mut self) -> Result<Listing, String> {
-        let path = self.current.clone().ok_or("No folder is open")?;
+        let path = self.tabs[self.active]
+            .current
+            .clone()
+            .ok_or("No folder is open")?;
         self.list(&path)
     }
 
@@ -365,7 +464,8 @@ impl Session {
     }
 
     fn require_current(&self) -> Result<&Path, String> {
-        self.current
+        self.tabs[self.active]
+            .current
             .as_deref()
             .ok_or_else(|| "No folder is open".into())
     }
@@ -567,6 +667,72 @@ mod tests {
 
         s.go_forward().unwrap();
         assert_eq!(s.current(), Some(b.as_path()));
+    }
+
+    #[test]
+    fn tabs_have_their_own_folder_and_history() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a");
+        let b = dir.path().join("b");
+        fs::create_dir_all(&a).unwrap();
+        fs::create_dir_all(&b).unwrap();
+
+        let mut s = session(dir.path());
+        s.navigate(&a).unwrap();
+        s.new_tab().unwrap();
+        assert_eq!(s.tab_count(), 2);
+        assert_eq!(s.active_tab(), 1);
+        assert_eq!(
+            s.current(),
+            Some(a.as_path()),
+            "a new tab starts in the same folder"
+        );
+        assert!(!s.can_go_back(), "a new tab has no history");
+
+        s.navigate(&b).unwrap();
+        assert_eq!(s.tab_titles(), vec!["a".to_string(), "b".to_string()]);
+
+        s.switch_tab(0).unwrap();
+        assert_eq!(s.current(), Some(a.as_path()));
+        s.switch_tab(1).unwrap();
+        assert!(s.can_go_back());
+    }
+
+    #[test]
+    fn closing_tabs_keeps_a_sensible_active_tab() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = session(dir.path());
+        s.navigate(dir.path()).unwrap();
+        assert!(s.close_tab(0).is_err(), "the last tab stays open");
+
+        s.new_tab().unwrap();
+        s.new_tab().unwrap();
+        assert_eq!(s.tab_count(), 3);
+        assert_eq!(s.active_tab(), 2);
+
+        s.close_tab(2).unwrap();
+        assert_eq!(
+            s.active_tab(),
+            1,
+            "closing the active last tab shows the one before"
+        );
+        s.close_tab(0).unwrap();
+        assert_eq!(
+            s.active_tab(),
+            0,
+            "closing a tab before the active one shifts it left"
+        );
+        assert_eq!(s.tab_count(), 1);
+        assert!(s.switch_tab(5).is_err());
+    }
+
+    #[test]
+    fn open_in_new_tab_does_not_add_a_tab_for_a_missing_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = session(dir.path());
+        s.navigate(dir.path()).unwrap();
+        assert!(s.open_in_new_tab(&dir.path().join("missing")).is_err());
+        assert_eq!(s.tab_count(), 1);
     }
 
     #[test]

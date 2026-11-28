@@ -36,6 +36,8 @@ ApplicationWindow {
 
     property var entries: []
     property var places: []
+    // Titles of the open tabs.
+    property var tabs: []
     // The folder the current entries belong to.
     property string shownPath: ""
     // The bookmark whose context menu is open, and its current name.
@@ -126,6 +128,15 @@ ApplicationWindow {
                 window.selected = [];
                 window.anchorRow = -1;
             }
+        }
+
+        function onTabsJsonChanged() {
+            window.tabs = JSON.parse(backend.tabsJson);
+            tabBar.currentIndex = backend.activeTab;
+        }
+
+        function onActiveTabChanged() {
+            tabBar.currentIndex = backend.activeTab;
         }
 
         function onPlacesJsonChanged() {
@@ -392,6 +403,39 @@ ApplicationWindow {
         onTriggered: backend.addBookmark()
     }
     Action {
+        id: newTabAction
+        text: qsTr("New Tab")
+        shortcut: "Ctrl+T"
+        onTriggered: backend.newTab()
+    }
+    Action {
+        id: closeTabAction
+        text: qsTr("Close Tab")
+        shortcut: "Ctrl+W"
+        enabled: window.tabs.length > 1
+        onTriggered: backend.closeTab(backend.activeTab)
+    }
+    Action {
+        id: nextTabAction
+        text: qsTr("Next Tab")
+        shortcut: "Ctrl+Tab"
+        enabled: window.tabs.length > 1
+        onTriggered: backend.switchTab((backend.activeTab + 1) % window.tabs.length)
+    }
+    Action {
+        id: previousTabAction
+        text: qsTr("Previous Tab")
+        shortcut: "Ctrl+Shift+Tab"
+        enabled: window.tabs.length > 1
+        onTriggered: backend.switchTab((backend.activeTab + window.tabs.length - 1) % window.tabs.length)
+    }
+    Action {
+        id: openInNewTabAction
+        text: qsTr("Open in New Tab")
+        enabled: window.selectedCount === 1 && window.entries[window.selected[0]].kind === "directory"
+        onTriggered: backend.openInNewTab(window.entries[window.selected[0]].path)
+    }
+    Action {
         id: quitAction
         text: qsTr("Quit")
         shortcut: StandardKey.Quit
@@ -428,6 +472,9 @@ ApplicationWindow {
                 Layout.alignment: Qt.AlignVCenter
                 Menu {
                     title: qsTr("&File")
+                    MenuItem { action: newTabAction }
+                    MenuItem { action: closeTabAction }
+                    MenuSeparator {}
                     MenuItem { action: quitAction }
                 }
                 Menu {
@@ -620,6 +667,49 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 spacing: 0
+
+                // Tabs, shown once there is more than one.
+                TabBar {
+                    id: tabBar
+                    Layout.fillWidth: true
+                    visible: window.tabs.length > 1
+
+                    Repeater {
+                        model: window.tabs
+
+                        delegate: TabButton {
+                            required property string modelData
+                            required property int index
+
+                            onClicked: backend.switchTab(index)
+
+                            contentItem: RowLayout {
+                                spacing: 4
+                                Label {
+                                    Layout.fillWidth: true
+                                    text: modelData
+                                    elide: Text.ElideRight
+                                    horizontalAlignment: Text.AlignHCenter
+                                }
+                                ToolButton {
+                                    text: "\u00D7"
+                                    implicitWidth: 22
+                                    implicitHeight: 22
+                                    ToolTip.text: qsTr("Close Tab")
+                                    ToolTip.visible: hovered
+                                    onClicked: backend.closeTab(index)
+                                }
+                            }
+
+                            // Middle-click closes a tab, as in most tabbed apps.
+                            MouseArea {
+                                anchors.fill: parent
+                                acceptedButtons: Qt.MiddleButton
+                                onClicked: backend.closeTab(index)
+                            }
+                        }
+                    }
+                }
 
                 // Column headers. Clicking one sorts by that column.
                 Row {
@@ -852,6 +942,11 @@ ApplicationWindow {
 
     Menu {
         id: contextMenu
+        MenuItem {
+            action: openInNewTabAction
+            visible: openInNewTabAction.enabled
+            height: visible ? implicitHeight : 0
+        }
         MenuItem { action: newFolderAction }
         MenuSeparator {}
         MenuItem { action: cutAction }
@@ -873,9 +968,12 @@ ApplicationWindow {
         required property var modelData
         required property int index
 
-        acceptedButtons: Qt.LeftButton | Qt.RightButton
+        acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
         onClicked: function (mouse) {
-            if (mouse.button === Qt.RightButton) {
+            if (mouse.button === Qt.MiddleButton) {
+                if (modelData.kind === "directory")
+                    backend.openInNewTab(modelData.path);
+            } else if (mouse.button === Qt.RightButton) {
                 if (window.selected.indexOf(index) < 0)
                     window.selectOnly(index);
                 contextMenu.popup();
