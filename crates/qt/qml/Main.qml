@@ -91,6 +91,17 @@ ApplicationWindow {
         drop.accept(Qt.CopyAction);
     }
 
+    // A bookmark dragged onto a bookmark row moves to that row; a folder dropped there is bookmarked.
+    function dropOnBookmark(drop, toIndex) {
+        const from = drop.getDataAsString("application/x-nexusfm-bookmark");
+        if (from.length > 0) {
+            backend.moveBookmarkTo(parseInt(from), toIndex);
+            drop.accept(Qt.MoveAction);
+        } else {
+            bookmarkDropped(drop);
+        }
+    }
+
     function focusPane(pane) {
         focusedPane = pane;
         location.text = focusedBackend.currentPath;
@@ -532,6 +543,19 @@ ApplicationWindow {
                 Menu {
                     title: qsTr("&Bookmarks")
                     MenuItem { action: addBookmarkAction }
+                    MenuSeparator {}
+                    MenuItem {
+                        text: qsTr("Import GTK Bookmarks")
+                        onTriggered: backend.importGtkBookmarks()
+                    }
+                    MenuItem {
+                        text: qsTr("Import Bookmarks...")
+                        onTriggered: window.askText(qsTr("Import Bookmarks"), qsTr("File to import (GTK bookmarks format):"), "", "importBookmarks")
+                    }
+                    MenuItem {
+                        text: qsTr("Export Bookmarks...")
+                        onTriggered: window.askText(qsTr("Export Bookmarks"), qsTr("File to write (GTK bookmarks format):"), backend.homePath + "/nexusfm-bookmarks.txt", "exportBookmarks")
+                    }
                 }
                 Menu {
                     title: qsTr("&Help")
@@ -624,7 +648,37 @@ ApplicationWindow {
                     delegate: Item {
                         required property var modelData
                         width: sidebar.width
-                        height: 30
+                        height: modelData.kind === "separator" ? 12 : 30
+
+                        // A bookmark can be dragged onto another row to reorder the list.
+                        Drag.active: bookmarkDrag.active
+                        Drag.dragType: Drag.Automatic
+                        Drag.supportedActions: Qt.MoveAction
+                        Drag.mimeData: ({ "application/x-nexusfm-bookmark": String(modelData.index) })
+
+                        DragHandler {
+                            id: bookmarkDrag
+                            enabled: modelData.kind === "bookmark"
+                            target: null
+                        }
+
+                        // Dropping on a bookmark moves the dragged bookmark there, or bookmarks a dropped folder.
+                        DropArea {
+                            anchors.fill: parent
+                            enabled: modelData.kind === "bookmark"
+                            onDropped: function (drop) { window.dropOnBookmark(drop, modelData.index); }
+                        }
+
+                        Rectangle {
+                            visible: modelData.kind === "separator"
+                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.leftMargin: 12
+                            anchors.rightMargin: 12
+                            height: 1
+                            color: window.palette.mid
+                        }
 
                         Label {
                             visible: modelData.kind === "header"
@@ -636,10 +690,15 @@ ApplicationWindow {
                             color: window.palette.placeholderText
                         }
 
+                        // Unavailable bookmarks stay listed, dimmed and not clickable.
                         ItemDelegate {
-                            visible: modelData.kind !== "header"
+                            visible: modelData.kind !== "header" && modelData.kind !== "separator"
                             anchors.fill: parent
-                            text: modelData.kind === "device" ? modelData.label + window.capacityText(modelData) : modelData.label
+                            text: (modelData.kind === "device" ? modelData.label + window.capacityText(modelData) : modelData.label)
+                                  + (modelData.available === false ? qsTr(" (unavailable)") : "")
+                            icon.name: modelData.kind === "device" ? "drive-harddisk" : "folder"
+                            enabled: modelData.available !== false
+                            opacity: enabled ? 1 : 0.5
                             highlighted: modelData.kind !== "device" && backend.currentPath === modelData.path
                             onClicked: modelData.kind === "device" ? backend.openDevice(modelData.key) : window.focusedBackend.navigate(modelData.path)
                         }
@@ -829,6 +888,10 @@ ApplicationWindow {
             text: qsTr("Move Down")
             onTriggered: backend.moveBookmark(window.bookmarkIndex, 1)
         }
+        MenuItem {
+            text: qsTr("Add Separator Below")
+            onTriggered: backend.addSeparator(window.bookmarkIndex)
+        }
         MenuSeparator {}
         MenuItem {
             text: qsTr("Remove Bookmark")
@@ -860,6 +923,16 @@ ApplicationWindow {
             if (action === "renameBookmark") {
                 // An empty name restores the folder's own name.
                 backend.renameBookmark(window.bookmarkIndex, inputField.text);
+                return;
+            }
+            if (action === "importBookmarks") {
+                if (name.length > 0)
+                    backend.importBookmarks(name);
+                return;
+            }
+            if (action === "exportBookmarks") {
+                if (name.length > 0)
+                    backend.exportBookmarks(name);
                 return;
             }
             if (name.length === 0)

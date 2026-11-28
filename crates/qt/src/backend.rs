@@ -134,6 +134,31 @@ pub mod qobject {
             cut: bool,
         ) -> QString;
 
+        /// Adds a separator below the bookmark at `index` (or at the end when out of range).
+        #[qinvokable]
+        #[cxx_name = "addSeparator"]
+        fn add_separator(self: Pin<&mut Backend>, index: i32);
+
+        /// Moves the bookmark at `from` so that it ends up at position `to`.
+        #[qinvokable]
+        #[cxx_name = "moveBookmarkTo"]
+        fn move_bookmark_to(self: Pin<&mut Backend>, from: i32, to: i32);
+
+        /// Adds the bookmarks from GTK's own bookmarks file that are not listed yet.
+        #[qinvokable]
+        #[cxx_name = "importGtkBookmarks"]
+        fn import_gtk_bookmarks(self: Pin<&mut Backend>);
+
+        /// Adds the bookmarks from a file in the GTK bookmarks format.
+        #[qinvokable]
+        #[cxx_name = "importBookmarks"]
+        fn import_bookmarks(self: Pin<&mut Backend>, path: &QString);
+
+        /// Writes the bookmark list to a file in the GTK bookmarks format.
+        #[qinvokable]
+        #[cxx_name = "exportBookmarks"]
+        fn export_bookmarks(self: Pin<&mut Backend>, path: &QString);
+
         /// Bookmarks an explicit folder.
         #[qinvokable]
         #[cxx_name = "addBookmarkPath"]
@@ -234,6 +259,8 @@ pub struct BackendRust {
     devices: Vec<nexusfm_filesystem::Device>,
     /// The tabs as last saved, so unchanged tabs are not written again.
     saved_tabs: String,
+    /// The sidebar as last sent to QML, so unchanged sidebars are not sent again.
+    sidebar_json_last: String,
     /// Whether this backend saves tabs. The primary pane does; a second pane does not.
     persistent: bool,
 }
@@ -271,6 +298,7 @@ impl Default for BackendRust {
             watcher: None,
             devices: Vec::new(),
             saved_tabs: String::new(),
+            sidebar_json_last: String::new(),
             persistent: true,
         }
     }
@@ -437,6 +465,11 @@ impl qobject::Backend {
         let json = self
             .as_mut()
             .with_session(|s| sidebar_json(&s.places(), &devices, s.bookmarks()));
+        // Only update when something changed, so the sidebar does not reset every second.
+        if self.as_mut().rust_mut().get_mut().sidebar_json_last == json {
+            return;
+        }
+        self.as_mut().rust_mut().get_mut().sidebar_json_last = json.clone();
         self.as_mut().set_places_json(to_qstring(&json));
     }
 
@@ -474,6 +507,80 @@ impl qobject::Backend {
         self.as_mut()
             .with_session(|s| s.rename_bookmark(index, &name));
         self.persist_bookmarks();
+    }
+
+    pub fn add_separator(mut self: Pin<&mut Self>, index: i32) {
+        let at = usize::try_from(index)
+            .map(|index| index + 1)
+            .unwrap_or(usize::MAX);
+        self.as_mut().with_session(|s| s.insert_separator(at));
+        self.persist_bookmarks();
+    }
+
+    pub fn move_bookmark_to(mut self: Pin<&mut Self>, from: i32, to: i32) {
+        let (Ok(from), Ok(to)) = (usize::try_from(from), usize::try_from(to)) else {
+            return;
+        };
+        self.as_mut().with_session(|s| s.reorder_bookmark(from, to));
+        self.persist_bookmarks();
+    }
+
+    pub fn import_gtk_bookmarks(mut self: Pin<&mut Self>) {
+        let gtk = nexusfm_bookmarks::gtk_bookmarks_file(
+            std::env::var_os("XDG_CONFIG_HOME").as_deref(),
+            std::env::var_os("HOME").as_deref(),
+        );
+        let Some(path) = gtk else {
+            self.as_mut()
+                .set_status_text(to_qstring("No home folder is set"));
+            return;
+        };
+        if !path.is_file() {
+            self.as_mut()
+                .set_status_text(to_qstring("No GTK bookmarks file was found"));
+            return;
+        }
+        self.import_from(&path);
+    }
+
+    pub fn import_bookmarks(self: Pin<&mut Self>, path: &QString) {
+        let path = PathBuf::from(String::from(path));
+        self.import_from(&path);
+    }
+
+    /// Adds the bookmarks in `path` and reports how many were new.
+    fn import_from(mut self: Pin<&mut Self>, path: &std::path::Path) {
+        match nexusfm_bookmarks::load(path) {
+            Ok(incoming) => {
+                let added = self.as_mut().with_session(|s| s.import_bookmarks(incoming));
+                self.as_mut().persist_bookmarks();
+                self.as_mut().set_status_text(to_qstring(&format!(
+                    "Imported {added} bookmark{}",
+                    if added == 1 { "" } else { "s" }
+                )));
+            }
+            Err(err) => self.as_mut().set_error_text(to_qstring(&format!(
+                "cannot read {}: {err}",
+                path.display()
+            ))),
+        }
+    }
+
+    pub fn export_bookmarks(mut self: Pin<&mut Self>, path: &QString) {
+        let path = PathBuf::from(String::from(path));
+        let list = self.as_mut().with_session(|s| s.bookmarks().to_vec());
+        match nexusfm_bookmarks::save(&path, &list) {
+            Ok(()) => self.as_mut().set_status_text(to_qstring(&format!(
+                "Exported {} bookmark{} to {}",
+                list.len(),
+                if list.len() == 1 { "" } else { "s" },
+                path.display()
+            ))),
+            Err(err) => self.as_mut().set_error_text(to_qstring(&format!(
+                "cannot write {}: {err}",
+                path.display()
+            ))),
+        }
     }
 
     pub fn move_bookmark(mut self: Pin<&mut Self>, index: i32, delta: i32) {
@@ -783,6 +890,7 @@ impl qobject::Backend {
 
     pub fn check_for_changes(mut self: Pin<&mut Self>) {
         self.as_mut().refresh_devices();
+        self.as_mut().refresh_sidebar();
         let changed = self
             .as_mut()
             .rust_mut()

@@ -11,7 +11,7 @@ A lightweight file manager written in Rust, with a Qt 6 Quick (QML) interface.
 - Drag and drop: drag selected items to another pane, to a folder row, or to another program. Dropping onto a folder moves the items into it (Ctrl copies). Drop a folder on the sidebar to bookmark it. Items dragged from another program are copied.
 - Places sidebar with Home, Desktop, Documents, Downloads, Music, Pictures, Videos, Trash, Recent and the file system root.
 - Devices: mounted drives, USB sticks and network shares appear in the sidebar with their free space. Click an unmounted device to mount and open it; right-click to mount or unmount.
-- Bookmarks: press `Ctrl+D` to bookmark the current folder. Right-click a bookmark in the sidebar to rename, move or remove it. Bookmarks are saved to `~/.config/nexusfm/bookmarks`, in the GTK bookmarks format.
+- Bookmarks: press `Ctrl+D` to bookmark the current folder. Drag a bookmark onto another to reorder the list, or drop a folder on the sidebar to bookmark it. Right-click a bookmark to rename, move, add a separator below it, or remove it. Bookmarks that are no longer there are shown dimmed as unavailable. Bookmarks are saved to `~/.config/nexusfm/bookmarks`, in the GTK bookmarks format; the Bookmarks menu imports GTK's own bookmarks or any file in that format, and exports the list to one.
 - Automatic refresh: changes made to the open folder by other programs appear within about a second. Selected items stay selected.
 - Show or hide hidden files (View menu or `Ctrl+H`).
 - Open folders in the window; open files with their default application.

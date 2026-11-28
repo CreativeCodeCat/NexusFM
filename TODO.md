@@ -184,14 +184,14 @@ Items are grouped by subsystem and roughly ordered by implementation dependencie
 - [x] Bookmark context menus
 - [x] Bookmark persistence
 - [x] Drag directories into the sidebar to create bookmarks
-- [ ] Bookmark separators
-- [ ] Bookmark icons
+- [x] Bookmark separators
+- [x] Bookmark icons
 
 ### Sidebar Behaviour
 
 - [x] Resizable sidebar
 - [x] Collapsible sidebar
-- [ ] Drag-and-drop bookmark management
+- [x] Drag-and-drop bookmark management
 - [ ] Context menus for sidebar entries
 - [ ] Automatic device updates
 - [ ] Configurable sidebar sections
@@ -322,11 +322,11 @@ Items are grouped by subsystem and roughly ordered by implementation dependencie
 - [x] Reorder bookmarks
 - [x] Persist bookmarks in the XDG config directory
 - [x] Display bookmarks in the sidebar
-- [ ] Bookmark icons
-- [ ] Bookmark separators
-- [ ] Import and export bookmarks
-- [ ] Support freedesktop GTK bookmarks file where appropriate
-- [ ] Detect unavailable bookmark locations
+- [x] Bookmark icons
+- [x] Bookmark separators
+- [x] Import and export bookmarks
+- [x] Support freedesktop GTK bookmarks file where appropriate
+- [x] Detect unavailable bookmark locations
 
 ## 9. Thumbnails and Previews (`thumbnails` crate)
 
@@ -625,7 +625,7 @@ Items are grouped by subsystem and roughly ordered by implementation dependencie
 - [x] Back/forward navigation history
 - [x] Context menus
 - [x] File properties
-- [ ] Bookmarks
+- [x] Bookmarks
 - [x] Drag and drop
 - [ ] Thumbnails
 - [x] Hidden files
