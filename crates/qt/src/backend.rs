@@ -111,6 +111,19 @@ pub mod qobject {
         #[cxx_name = "saveWindowState"]
         fn save_window_state(self: Pin<&mut Backend>, json: &QString);
 
+        /// Opens a device: mounts it first if needed, then shows its root.
+        #[qinvokable]
+        #[cxx_name = "openDevice"]
+        fn open_device(self: Pin<&mut Backend>, key: &QString);
+
+        #[qinvokable]
+        #[cxx_name = "mountDevice"]
+        fn mount_device(self: Pin<&mut Backend>, key: &QString);
+
+        #[qinvokable]
+        #[cxx_name = "unmountDevice"]
+        fn unmount_device(self: Pin<&mut Backend>, key: &QString);
+
         /// Reloads the folder if it changed on disk since the last check.
         #[qinvokable]
         #[cxx_name = "checkForChanges"]
@@ -170,6 +183,7 @@ pub struct BackendRust {
     window_state_json: QString,
     session: Session,
     watcher: Option<nexusfm_filesystem::DirectoryWatcher>,
+    devices: Vec<nexusfm_filesystem::Device>,
 }
 
 impl Default for BackendRust {
@@ -201,6 +215,7 @@ impl Default for BackendRust {
             ),
             session,
             watcher: None,
+            devices: Vec::new(),
         }
     }
 }
@@ -321,9 +336,10 @@ impl qobject::Backend {
 
     /// Rebuilds the sidebar (places and bookmarks) for QML.
     fn refresh_sidebar(mut self: Pin<&mut Self>) {
+        let devices = self.as_mut().rust_mut().get_mut().devices.clone();
         let json = self
             .as_mut()
-            .with_session(|s| sidebar_json(&s.places(), s.bookmarks()));
+            .with_session(|s| sidebar_json(&s.places(), &devices, s.bookmarks()));
         self.as_mut().set_places_json(to_qstring(&json));
     }
 
@@ -420,6 +436,7 @@ impl qobject::Backend {
         self.as_mut()
             .with_session(|s| s.set_bookmarks(bookmarks.unwrap_or_default()));
         self.as_mut().refresh_sidebar();
+        self.as_mut().refresh_devices();
         let layout = nexusfm_config::WindowState::load_user(
             std::env::var_os("XDG_STATE_HOME").as_deref(),
             std::env::var_os("HOME").as_deref(),
@@ -493,7 +510,70 @@ impl qobject::Backend {
         }
     }
 
+    /// Checks for mounted and unmounted devices, and updates the sidebar if any changed.
+    fn refresh_devices(mut self: Pin<&mut Self>) {
+        let devices = nexusfm_filesystem::list_devices();
+        if devices != self.as_mut().rust_mut().get_mut().devices {
+            self.as_mut().rust_mut().get_mut().devices = devices;
+            self.refresh_sidebar();
+        }
+    }
+
+    pub fn open_device(mut self: Pin<&mut Self>, key: &QString) {
+        let key = String::from(key);
+        let known = self.as_mut().rust_mut().get_mut().devices.clone();
+        let root = match known.iter().find(|device| device.key == key) {
+            Some(device) if device.mounted => device.root.clone(),
+            _ => None,
+        };
+        let root = match root {
+            Some(root) => Some(root),
+            None => {
+                if let Err(err) = nexusfm_filesystem::mount_device(&key) {
+                    self.as_mut().set_error_text(to_qstring(&err.to_string()));
+                    self.refresh_devices();
+                    return;
+                }
+                // The mounted device has a new key, so find it by the name it had.
+                let name = key.strip_prefix("volume:").unwrap_or(&key).to_string();
+                nexusfm_filesystem::list_devices()
+                    .into_iter()
+                    .find(|device| device.mounted && device.name == name)
+                    .and_then(|device| device.root)
+            }
+        };
+        self.as_mut().refresh_devices();
+        match root {
+            Some(root) => {
+                let result = self
+                    .as_mut()
+                    .with_session(|s| s.navigate(std::path::Path::new(&root)));
+                self.show_listing(result);
+            }
+            None => self
+                .as_mut()
+                .set_error_text(to_qstring("The device did not show a folder")),
+        }
+    }
+
+    pub fn mount_device(mut self: Pin<&mut Self>, key: &QString) {
+        let key = String::from(key);
+        if let Err(err) = nexusfm_filesystem::mount_device(&key) {
+            self.as_mut().set_error_text(to_qstring(&err.to_string()));
+        }
+        self.refresh_devices();
+    }
+
+    pub fn unmount_device(mut self: Pin<&mut Self>, key: &QString) {
+        let key = String::from(key);
+        if let Err(err) = nexusfm_filesystem::unmount_device(&key) {
+            self.as_mut().set_error_text(to_qstring(&err.to_string()));
+        }
+        self.refresh_devices();
+    }
+
     pub fn check_for_changes(mut self: Pin<&mut Self>) {
+        self.as_mut().refresh_devices();
         let changed = self
             .as_mut()
             .rust_mut()

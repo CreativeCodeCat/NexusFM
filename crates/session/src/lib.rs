@@ -17,7 +17,8 @@ use nexusfm_bookmarks::Bookmark;
 use nexusfm_config::{Config, ViewMode};
 use nexusfm_core::{Entry, EntryKind, Location, SortKey, SortOrder, sort_entries};
 use nexusfm_filesystem::{
-    FileProperties, is_uri, list_directory, list_uri, parent_location, read_properties,
+    Device, DeviceKind, FileProperties, is_uri, list_directory, list_uri, parent_location,
+    read_properties,
 };
 use nexusfm_operations as ops;
 
@@ -438,7 +439,7 @@ pub fn listing_json(listing: &Listing) -> String {
 /// the bookmarks. Each item has `kind` (`place`, `header` or `bookmark`) and
 /// `label`. Places and bookmarks have `path`, and bookmarks also have `index`
 /// (their position in the bookmark list, for rename, move and remove).
-pub fn sidebar_json(places: &[Place], bookmarks: &[Bookmark]) -> String {
+pub fn sidebar_json(places: &[Place], devices: &[Device], bookmarks: &[Bookmark]) -> String {
     let mut items: Vec<serde_json::Value> = places
         .iter()
         .map(|place| {
@@ -449,6 +450,22 @@ pub fn sidebar_json(places: &[Place], bookmarks: &[Bookmark]) -> String {
             })
         })
         .collect();
+    if !devices.is_empty() {
+        items.push(serde_json::json!({ "kind": "header", "label": "Devices" }));
+    }
+    for device in devices {
+        items.push(serde_json::json!({
+            "kind": "device",
+            "key": device.key,
+            "label": device.name,
+            "path": device.root.clone().unwrap_or_default(),
+            "mounted": device.mounted,
+            "canUnmount": device.can_unmount,
+            "deviceKind": device_kind_name(device.kind),
+            "free": device.free_bytes,
+            "total": device.total_bytes,
+        }));
+    }
     if !bookmarks.is_empty() {
         items.push(serde_json::json!({ "kind": "header", "label": "Bookmarks" }));
     }
@@ -503,6 +520,14 @@ pub fn parse_paths(json: &str) -> Result<Vec<PathBuf>, String> {
     let values: Vec<String> =
         serde_json::from_str(json).map_err(|err| format!("Invalid selection: {err}"))?;
     Ok(values.into_iter().map(PathBuf::from).collect())
+}
+
+fn device_kind_name(kind: DeviceKind) -> &'static str {
+    match kind {
+        DeviceKind::Drive => "drive",
+        DeviceKind::Removable => "removable",
+        DeviceKind::Network => "network",
+    }
 }
 
 fn kind_name(kind: EntryKind) -> &'static str {
@@ -786,7 +811,7 @@ mod tests {
         s.navigate(dir.path()).unwrap();
         s.add_bookmark();
         let value: serde_json::Value =
-            serde_json::from_str(&sidebar_json(&s.places(), s.bookmarks())).unwrap();
+            serde_json::from_str(&sidebar_json(&s.places(), &[], s.bookmarks())).unwrap();
         let items = value.as_array().unwrap();
         let header = items
             .iter()
