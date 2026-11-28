@@ -123,6 +123,17 @@ pub mod qobject {
         #[cxx_name = "pasteItems"]
         fn paste_items(self: Pin<&mut Backend>, paths: &QString, cut: bool) -> QString;
 
+        /// Copies or moves items into a folder (a path or URI), for drag and drop.
+        /// Returns a JSON array of the paths that failed.
+        #[qinvokable]
+        #[cxx_name = "dropItems"]
+        fn drop_items(
+            self: Pin<&mut Backend>,
+            paths: &QString,
+            dest: &QString,
+            cut: bool,
+        ) -> QString;
+
         /// Bookmarks an explicit folder.
         #[qinvokable]
         #[cxx_name = "addBookmarkPath"]
@@ -632,6 +643,34 @@ impl qobject::Backend {
             }
         };
         let (failed, errors) = self.as_mut().with_session(|s| s.paste_items(&paths, cut));
+        if !errors.is_empty() {
+            self.as_mut().set_error_text(to_qstring(&errors.join("\n")));
+        }
+        self.refresh();
+        let failed: Vec<String> = failed
+            .iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect();
+        to_qstring(&serde_json::to_string(&failed).unwrap_or_else(|_| "[]".into()))
+    }
+
+    pub fn drop_items(
+        mut self: Pin<&mut Self>,
+        paths: &QString,
+        dest: &QString,
+        cut: bool,
+    ) -> QString {
+        let paths = match parse_paths(&String::from(paths)) {
+            Ok(paths) => paths,
+            Err(message) => {
+                self.as_mut().set_error_text(to_qstring(&message));
+                return QString::from("[]");
+            }
+        };
+        let dest = PathBuf::from(String::from(dest));
+        let (failed, errors) = self
+            .as_mut()
+            .with_session(|s| s.transfer_items(&paths, &dest, cut));
         if !errors.is_empty() {
             self.as_mut().set_error_text(to_qstring(&errors.join("\n")));
         }

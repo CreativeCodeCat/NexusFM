@@ -107,9 +107,15 @@ impl Session {
         self.add_bookmark_path(current)
     }
 
-    /// Bookmarks `path`. Returns `false` if it is already bookmarked.
+    /// Bookmarks the folder at `path`. Returns `false` if it is not a folder, is
+    /// already bookmarked, or cannot be read.
     pub fn add_bookmark_path(&mut self, path: PathBuf) -> bool {
         let current = clean(&path);
+        let is_folder = nexusfm_filesystem::read_metadata(&current)
+            .is_ok_and(|meta| meta.kind == EntryKind::Directory);
+        if !is_folder {
+            return false;
+        }
         if self
             .bookmarks
             .iter()
@@ -449,14 +455,25 @@ impl Session {
         let Ok(dest) = self.require_current().map(Path::to_path_buf) else {
             return (paths.to_vec(), vec!["No folder is open".into()]);
         };
+        self.transfer_items(paths, &dest, cut)
+    }
 
+    /// Copies or moves `paths` into the folder `dest`, which may be a local path
+    /// or a URI. Returns the paths that failed and one message per failure. Items
+    /// are never overwritten.
+    pub fn transfer_items(
+        &self,
+        paths: &[PathBuf],
+        dest: &Path,
+        cut: bool,
+    ) -> (Vec<PathBuf>, Vec<String>) {
         let mut errors = Vec::new();
         let mut failed = Vec::new();
         for path in paths {
             let result = if cut {
-                ops::move_into(path, &dest)
+                ops::move_into(path, dest)
             } else {
-                ops::copy(path, &dest)
+                ops::copy(path, dest)
             };
             if let Err(err) = result {
                 errors.push(err.to_string());
@@ -793,6 +810,50 @@ mod tests {
         assert_eq!(failed, vec![taken]);
         assert_eq!(errors.len(), 1);
         assert!(src.exists(), "a copy leaves the source in place");
+    }
+
+    #[test]
+    fn transfer_items_copies_and_moves_into_any_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a");
+        let b = dir.path().join("b");
+        fs::create_dir_all(&a).unwrap();
+        fs::create_dir_all(&b).unwrap();
+        let file = a.join("note.txt");
+        fs::write(&file, b"x").unwrap();
+
+        let s = session(dir.path());
+        let (failed, errors) = s.transfer_items(std::slice::from_ref(&file), &b, false);
+        assert!(failed.is_empty() && errors.is_empty());
+        assert!(
+            b.join("note.txt").exists() && file.exists(),
+            "copy keeps the source"
+        );
+
+        let (failed, _) = s.transfer_items(std::slice::from_ref(&file), &b, true);
+        assert_eq!(
+            failed,
+            vec![file.clone()],
+            "the copy already exists, so the move fails"
+        );
+        fs::remove_file(b.join("note.txt")).unwrap();
+        let (failed, _) = s.transfer_items(std::slice::from_ref(&file), &b, true);
+        assert!(failed.is_empty());
+        assert!(
+            !file.exists() && b.join("note.txt").exists(),
+            "move removes the source"
+        );
+    }
+
+    #[test]
+    fn only_folders_can_be_bookmarked() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("plain.txt");
+        fs::write(&file, b"x").unwrap();
+        let mut s = session(dir.path());
+        assert!(!s.add_bookmark_path(file));
+        assert!(!s.add_bookmark_path(dir.path().join("missing")));
+        assert!(s.add_bookmark_path(dir.path().to_path_buf()));
     }
 
     #[test]

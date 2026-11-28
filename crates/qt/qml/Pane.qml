@@ -74,6 +74,26 @@ Item {
         return selected.indexOf(row) >= 0 ? main.palette.highlightedText : main.palette.text;
     }
 
+    // The items a drag from `row` carries: the selection if that row is selected, else just that row.
+    function dragUris(row) {
+        const rows = selected.indexOf(row) >= 0 ? selected : [row];
+        return rows
+            .filter(function (r) { return r < entries.length; })
+            .map(function (r) { return main.pathToUri(entries[r].path); })
+            .join("\r\n");
+    }
+
+    // Copies or moves dropped items into `folder`. A drop from inside the window
+    // moves, unless Ctrl is held; a drop from another program copies.
+    function acceptDrop(drop, folder) {
+        if (!drop.hasUrls)
+            return;
+        const paths = Array.from(drop.urls).map(function (url) { return main.uriToPath(String(url)); });
+        const move = main.internalDrag && !(drop.modifiers & Qt.ControlModifier);
+        pane.paneBackend.dropItems(JSON.stringify(paths), folder, move);
+        drop.accept(move ? Qt.MoveAction : Qt.CopyAction);
+    }
+
     function openEntry(entry) {
         if (entry.kind === "directory")
             paneBackend.navigate(entry.path);
@@ -86,6 +106,12 @@ Item {
     TapHandler {
         acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
         onPressedChanged: if (pressed) pane.main.focusPane(pane)
+    }
+
+    // Dropping on empty space puts the items in this pane's folder.
+    DropArea {
+        anchors.fill: parent
+        onDropped: function (drop) { pane.acceptDrop(drop, pane.paneBackend.currentPath); }
     }
 
     // Keep this pane's listing in step with its backend.
@@ -275,6 +301,11 @@ Item {
                         }
                     }
 
+                    RowDrop {
+                        anchors.fill: parent
+                        modelData: parent.modelData
+                    }
+
                     ItemClick {
                         anchors.fill: parent
                         modelData: parent.modelData
@@ -312,6 +343,11 @@ Item {
                         elide: Text.ElideRight
                         font.bold: modelData.kind === "directory"
                         color: pane.textColor(index)
+                    }
+
+                    RowDrop {
+                        anchors.fill: parent
+                        modelData: parent.modelData
                     }
 
                     ItemClick {
@@ -369,6 +405,11 @@ Item {
                         }
                     }
 
+                    RowDrop {
+                        anchors.fill: parent
+                        modelData: parent.modelData
+                    }
+
                     ItemClick {
                         anchors.fill: parent
                         modelData: parent.modelData
@@ -388,11 +429,39 @@ Item {
         z: 5
     }
 
+    // A folder row is a drop target: dropping onto it moves or copies into that folder.
+    component RowDrop: DropArea {
+        required property var modelData
+
+        enabled: modelData.kind === "directory"
+        onDropped: function (drop) { pane.acceptDrop(drop, modelData.path); }
+
+        Rectangle {
+            anchors.fill: parent
+            color: pane.main.palette.highlight
+            opacity: 0.35
+            visible: parent.containsDrag
+        }
+    }
+
     // Click handling for file rows: select, extend the selection, open on
     // double-click, middle-click opens a folder in a new tab, right-click shows the menu.
+    // Pressing and dragging a row drags the selection to another pane, a folder, the
+    // sidebar or another program.
     component ItemClick: MouseArea {
         required property var modelData
         required property int index
+
+        Drag.active: dragHandler.active
+        Drag.dragType: Drag.Automatic
+        Drag.supportedActions: Qt.CopyAction | Qt.MoveAction
+        Drag.mimeData: ({ "text/uri-list": pane.dragUris(index) })
+
+        DragHandler {
+            id: dragHandler
+            target: null
+            onActiveChanged: pane.main.internalDrag = active
+        }
 
         acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
         onClicked: function (mouse) {
