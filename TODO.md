@@ -133,9 +133,9 @@ Items are grouped by subsystem and roughly ordered by implementation dependencie
 - [x] Tab closing
 - [x] Restore previously open tabs
 - [ ] Tab context menus
-- [ ] Split-pane browsing
-- [ ] Independent navigation history per pane
-- [ ] Independent view modes per pane
+- [x] Split-pane browsing
+- [x] Independent navigation history per pane
+- [x] Independent view modes per pane
 - [ ] Synchronised scrolling where appropriate
 - [ ] Drag and drop between panes
 - [ ] Keyboard shortcuts for common actions
@@ -267,7 +267,7 @@ Items are grouped by subsystem and roughly ordered by implementation dependencie
 - [ ] Create symbolic link
 - [ ] Create hard link where supported
 - [ ] Copy and move between tabs
-- [ ] Copy and move between split panes
+- [x] Copy and move between split panes
 - [ ] Drag-and-drop file operations
 
 ### Advanced Operations
@@ -499,7 +499,7 @@ Items are grouped by subsystem and roughly ordered by implementation dependencie
 - [ ] Recent locations history
 - [ ] Clear recent history
 - [ ] Persist navigation history where appropriate
-- [ ] Restore previous session
+- [x] Restore previous session
 - [x] Restore open tabs
 - [ ] Restore split-pane state
 - [ ] Configurable history limits
@@ -621,7 +621,7 @@ Items are grouped by subsystem and roughly ordered by implementation dependencie
 ### Phase 2 — Everyday File Management
 
 - [x] Tabs
-- [ ] Split-pane browsing
+- [x] Split-pane browsing
 - [x] Back/forward navigation history
 - [x] Context menus
 - [x] File properties

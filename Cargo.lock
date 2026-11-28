@@ -794,6 +794,7 @@ dependencies = [
  "nexusfm-filesystem",
  "nexusfm-session",
  "qt-build-utils",
+ "serde_json",
 ]
 
 [[package]]
