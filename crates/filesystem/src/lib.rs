@@ -71,6 +71,9 @@ fn list_file(folder: &gio::File) -> std::result::Result<Vec<Entry>, gio::glib::E
     let mut entries = Vec::new();
     for info in enumerator {
         let Ok(info) = info else { continue };
+        if !info.has_attribute("standard::name") || !info.has_attribute("standard::type") {
+            continue;
+        }
         let name = info.name().to_string_lossy().into_owned();
         let child = folder.child(&name);
         let path = child
@@ -92,7 +95,9 @@ fn list_file(folder: &gio::File) -> std::result::Result<Vec<Entry>, gio::glib::E
             name,
             path,
             kind,
-            size: u64::try_from(info.size()).unwrap_or(0),
+            // Read with the attribute getter: some virtual locations (trash, recent)
+            // do not provide the size, and the typed getter would warn.
+            size: info.attribute_uint64("standard::size"),
             modified,
         });
     }

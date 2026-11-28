@@ -39,11 +39,16 @@ pub struct Metadata {
 
 impl Metadata {
     fn from_info(info: &gio::FileInfo) -> Self {
-        let kind = match info.file_type() {
-            gio::FileType::Directory => EntryKind::Directory,
-            gio::FileType::Regular => EntryKind::File,
-            gio::FileType::SymbolicLink => EntryKind::Symlink,
-            _ => EntryKind::Other,
+        // Check for the type first: reading a missing type warns in GLib.
+        let kind = if info.has_attribute("standard::type") {
+            match info.file_type() {
+                gio::FileType::Directory => EntryKind::Directory,
+                gio::FileType::Regular => EntryKind::File,
+                gio::FileType::SymbolicLink => EntryKind::Symlink,
+                _ => EntryKind::Other,
+            }
+        } else {
+            EntryKind::Other
         };
         let time = |attribute: &str| match info.attribute_uint64(attribute) {
             0 => None,
@@ -52,7 +57,10 @@ impl Metadata {
 
         Self {
             kind,
-            size: u64::try_from(info.size()).unwrap_or(0),
+            // The attribute getters return zero or nothing for a missing value. The
+            // typed getters (size, symlink_target) warn when the value is missing,
+            // which happens on virtual locations such as trash:/// and recent:///.
+            size: info.attribute_uint64("standard::size"),
             modified: time("time::modified"),
             accessed: time("time::access"),
             created: time("time::created"),
@@ -65,7 +73,9 @@ impl Metadata {
             group: info
                 .attribute_string("owner::group")
                 .map(|name| name.to_string()),
-            link_target: info.symlink_target(),
+            link_target: info
+                .attribute_byte_string("standard::symlink-target")
+                .map(|target| PathBuf::from(target.as_str())),
         }
     }
 }
@@ -116,5 +126,15 @@ mod tests {
         let l = read_metadata(&link).unwrap();
         assert_eq!(l.kind, EntryKind::Symlink);
         assert_eq!(l.link_target, Some(file));
+    }
+
+    #[test]
+    fn missing_attributes_read_as_defaults() {
+        // Virtual locations may not provide every attribute; reading must not warn or panic.
+        let info = gio::FileInfo::new();
+        let meta = Metadata::from_info(&info);
+        assert_eq!(meta.size, 0);
+        assert_eq!(meta.link_target, None);
+        assert_eq!(meta.kind, EntryKind::Other);
     }
 }
