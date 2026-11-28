@@ -25,7 +25,7 @@ use serde::Deserialize;
 use thiserror::Error;
 
 pub mod window;
-pub use window::WindowState;
+pub use window::{TabsState, WindowState};
 
 /// Name of the configuration file inside the NexusFM config directory.
 pub const CONFIG_FILE_NAME: &str = "config.lua";

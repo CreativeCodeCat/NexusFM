@@ -206,6 +206,8 @@ pub struct BackendRust {
     session: Session,
     watcher: Option<nexusfm_filesystem::DirectoryWatcher>,
     devices: Vec<nexusfm_filesystem::Device>,
+    /// The tabs as last saved, so unchanged tabs are not written again.
+    saved_tabs: String,
 }
 
 impl Default for BackendRust {
@@ -240,6 +242,7 @@ impl Default for BackendRust {
             session,
             watcher: None,
             devices: Vec::new(),
+            saved_tabs: String::new(),
         }
     }
 }
@@ -288,6 +291,15 @@ fn view_mode_from_i32(value: i32) -> ViewMode {
         2 => ViewMode::Icon,
         _ => ViewMode::Detailed,
     }
+}
+
+/// Whether a saved tab can be reopened at startup. Network locations are
+/// skipped, since an unreachable server would hold up startup.
+fn restorable(text: &str) -> bool {
+    !nexusfm_core::location::is_uri(text)
+        || ["file:", "trash:", "recent:"]
+            .iter()
+            .any(|scheme| text.starts_with(scheme))
 }
 
 /// Where the bookmark list is stored, from the environment.
@@ -358,10 +370,33 @@ impl qobject::Backend {
                     format!("{count} items")
                 };
                 self.as_mut().set_status_text(to_qstring(&status));
+                self.as_mut().persist_tabs();
             }
             Err(message) => self.as_mut().set_error_text(to_qstring(&message)),
         }
         self.sync_state();
+    }
+
+    /// Saves the open tabs, if they changed since the last save.
+    fn persist_tabs(mut self: Pin<&mut Self>) {
+        let state = self.as_mut().with_session(|s| nexusfm_config::TabsState {
+            tabs: s
+                .tab_paths()
+                .iter()
+                .map(|path| path.to_string_lossy().into_owned())
+                .collect(),
+            active: s.active_tab(),
+        });
+        let json = state.to_json();
+        if self.as_mut().rust_mut().get_mut().saved_tabs == json {
+            return;
+        }
+        let xdg = std::env::var_os("XDG_STATE_HOME");
+        let home = std::env::var_os("HOME");
+        match state.save_user(xdg.as_deref(), home.as_deref()) {
+            Ok(()) => self.as_mut().rust_mut().get_mut().saved_tabs = json,
+            Err(err) => eprintln!("nexusfm: cannot save open tabs: {err}"),
+        }
     }
 
     /// Rebuilds the sidebar (places and bookmarks) for QML.
@@ -458,7 +493,7 @@ impl qobject::Backend {
         let target = if text.trim().is_empty() {
             self.as_mut().with_session(|s| s.home().to_path_buf())
         } else {
-            PathBuf::from(text)
+            PathBuf::from(&text)
         };
 
         let bookmarks =
@@ -473,6 +508,29 @@ impl qobject::Backend {
         );
         self.as_mut()
             .set_window_state_json(to_qstring(&layout.to_json()));
+
+        // With no folder given, bring back the tabs from last time.
+        if text.trim().is_empty() {
+            let saved = nexusfm_config::TabsState::load_user(
+                std::env::var_os("XDG_STATE_HOME").as_deref(),
+                std::env::var_os("HOME").as_deref(),
+            );
+            let paths: Vec<PathBuf> = saved
+                .tabs
+                .iter()
+                .filter(|text| restorable(text))
+                .map(PathBuf::from)
+                .collect();
+            if !paths.is_empty() {
+                let result = self
+                    .as_mut()
+                    .with_session(|s| s.restore_tabs(&paths, saved.active));
+                if result.is_ok() {
+                    self.show_listing(result);
+                    return;
+                }
+            }
+        }
 
         let result = self.as_mut().with_session(|s| s.navigate(&target));
         self.show_listing(result);

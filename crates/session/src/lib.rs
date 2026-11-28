@@ -246,6 +246,41 @@ impl Session {
         serde_json::Value::from(self.tab_titles()).to_string()
     }
 
+    /// The folder of each tab, in order. Tabs that have not opened a folder are left out.
+    pub fn tab_paths(&self) -> Vec<PathBuf> {
+        self.tabs
+            .iter()
+            .filter_map(|tab| tab.current.clone())
+            .collect()
+    }
+
+    /// Replaces the tabs with one per readable folder in `paths`, and shows the
+    /// one at `active` (or the nearest remaining one). Folders that cannot be read
+    /// are skipped. Returns an error, and leaves the tabs alone, if none can be read.
+    pub fn restore_tabs(&mut self, paths: &[PathBuf], active: usize) -> Result<Listing, String> {
+        let mut tabs = Vec::new();
+        let mut new_active = 0;
+        for (index, path) in paths.iter().enumerate() {
+            let target = clean(path);
+            if self.list(&target).is_err() {
+                continue;
+            }
+            if index <= active {
+                new_active = tabs.len();
+            }
+            tabs.push(Tab {
+                current: Some(target),
+                ..Tab::default()
+            });
+        }
+        if tabs.is_empty() {
+            return Err("None of the saved tabs could be opened".into());
+        }
+        self.tabs = tabs;
+        self.active = new_active;
+        self.reload()
+    }
+
     /// Opens a new tab showing the current folder, and switches to it.
     pub fn new_tab(&mut self) -> Result<Listing, String> {
         let folder = self
@@ -724,6 +759,37 @@ mod tests {
         );
         assert_eq!(s.tab_count(), 1);
         assert!(s.switch_tab(5).is_err());
+    }
+
+    #[test]
+    fn restore_tabs_skips_missing_folders_and_keeps_the_active_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a");
+        let b = dir.path().join("b");
+        fs::create_dir_all(&a).unwrap();
+        fs::create_dir_all(&b).unwrap();
+        let gone = dir.path().join("gone");
+
+        let mut s = session(dir.path());
+        s.restore_tabs(&[a.clone(), gone.clone(), b.clone()], 2)
+            .unwrap();
+        assert_eq!(s.tab_paths(), vec![a.clone(), b.clone()]);
+        assert_eq!(
+            s.current(),
+            Some(b.as_path()),
+            "the saved active tab is shown"
+        );
+
+        // When the active tab's folder is gone, the one before it is shown.
+        s.restore_tabs(&[a.clone(), gone.clone()], 1).unwrap();
+        assert_eq!(s.current(), Some(a.as_path()));
+
+        assert!(s.restore_tabs(&[gone], 0).is_err());
+        assert_eq!(
+            s.tab_paths(),
+            vec![a],
+            "a failed restore leaves the tabs alone"
+        );
     }
 
     #[test]
