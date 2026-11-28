@@ -159,9 +159,9 @@ Items are grouped by subsystem and roughly ordered by implementation dependencie
 - [x] Music
 - [x] Pictures
 - [x] Videos
-- [ ] Trash
+- [x] Trash
 - [x] File system root
-- [ ] Recently used files
+- [x] Recently used files
 
 ### Devices
 
@@ -189,13 +189,13 @@ Items are grouped by subsystem and roughly ordered by implementation dependencie
 
 ### Sidebar Behaviour
 
-- [ ] Resizable sidebar
-- [ ] Collapsible sidebar
+- [x] Resizable sidebar
+- [x] Collapsible sidebar
 - [ ] Drag-and-drop bookmark management
 - [ ] Context menus for sidebar entries
 - [ ] Automatic device updates
 - [ ] Configurable sidebar sections
-- [ ] Persist sidebar state
+- [x] Persist sidebar state
 
 ## 6. Selection and Context Menus
 
@@ -608,8 +608,8 @@ Items are grouped by subsystem and roughly ordered by implementation dependencie
 
 ### Phase 1 — Core Application
 
-- [ ] Rust core and filesystem abstraction
-- [ ] GIO/GVFS integration
+- [x] Rust core and filesystem abstraction
+- [x] GIO/GVFS integration
 - [x] Qt 6 Quick (QML) frontend
 - [x] Main window and navigation toolbar
 - [ ] Sidebar and Places
