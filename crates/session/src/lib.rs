@@ -346,6 +346,16 @@ impl Session {
             }
         }
 
+        // Virtual locations provided by GVFS.
+        places.push(Place {
+            label: "Trash".into(),
+            path: PathBuf::from("trash:///"),
+        });
+        places.push(Place {
+            label: "Recent".into(),
+            path: PathBuf::from("recent:///"),
+        });
+
         places.push(Place {
             label: "File System".into(),
             path: PathBuf::from("/"),
@@ -793,6 +803,8 @@ mod tests {
         fs::create_dir(dir.path().join("Downloads")).unwrap();
         let s = session(dir.path());
         let labels: Vec<_> = s.places().into_iter().map(|p| p.label).collect();
+        assert!(labels.iter().any(|label| label == "Trash"));
+        assert!(labels.iter().any(|label| label == "Recent"));
         assert_eq!(labels.first().map(String::as_str), Some("Home"));
         assert!(labels.iter().any(|label| label == "Downloads"));
         assert!(!labels.iter().any(|label| label == "Music"));
